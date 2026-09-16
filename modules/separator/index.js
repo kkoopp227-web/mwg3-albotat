@@ -821,14 +821,8 @@ client.on('interactionCreate', async interaction => {
                 return interaction.editReply({ content: '⚠️ أنت مو داخل أي روم صوتي. ادخل أي روم صوتي بالسيرفر ثم اضغط إنشاء روم.' });
             }
 
-            // Resolve category chosen in the panel (if any)
-            let parentId;
-            const catId = panelCategories.get(interaction.message?.id);
-            if (catId) {
-                const cat = interaction.guild.channels.cache.get(catId) ||
-                    (await interaction.guild.channels.fetch(catId).catch(() => null));
-                if (cat && cat.type === ChannelType.GuildCategory) parentId = cat.id;
-            }
+            // Room always lands in the fixed category (ضااااا)
+            const parentId = '1548214066667978772';
 
             try {
                 const newRoom = await interaction.guild.channels.create({

@@ -47,7 +47,7 @@ class Manager {
             if (!inst.enabled) continue;
             (byType[inst.type] = byType[inst.type] || []).push(inst);
         }
-        const types = ['music', 'ticket', 'server', 'separator', 'bank'];
+        const types = ['music', 'ticket', 'server', 'separator', 'bank', 'system'];
         for (const t of types) {
             const list = byType[t] || [];
             this.pendingPayload.set(t, list);

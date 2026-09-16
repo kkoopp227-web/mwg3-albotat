@@ -98,4 +98,4 @@ async function init() {
   }
 }
 
-module.exports = { defaults, data, save, init, readLocal, writeLocal };
+module.exports = { defaults, init, readLocal, writeLocal, get data() { return data; }, get save() { return save; } };

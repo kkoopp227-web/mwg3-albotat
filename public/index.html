@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة إدارة البوتات</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <span class="logo">🤖</span>
+            <h1>لوحة إدارة البوتات</h1>
+        </div>
+        <div class="header-stats" id="headerStats"></div>
+    </header>
+
+    <main>
+        <section class="types" id="typesSection"></section>
+
+        <section class="bots">
+            <div class="section-title">
+                <h2>البوتات المسجلة</h2>
+                <button class="btn primary" id="newBotBtn">+ بوت جديد</button>
+            </div>
+            <div class="bot-grid" id="botGrid"></div>
+            <div class="empty" id="emptyState">لا توجد بوتات بعد. اضغط "بوت جديد" لإضافة أول بوت.</div>
+        </section>
+    </main>
+
+    <div class="modal-backdrop hidden" id="modalBackdrop">
+        <div class="modal">
+            <div class="modal-head">
+                <h3 id="modalTitle">بوت جديد</h3>
+                <button class="btn ghost small" id="modalClose">✕</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="logsModal">
+        <div class="modal wide">
+            <div class="modal-head">
+                <h3>سجل النشاط</h3>
+                <button class="btn ghost small" id="logsClose">✕</button>
+            </div>
+            <div class="modal-body">
+                <pre class="log-view" id="logView">...</pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="msg-toast" id="msgToast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

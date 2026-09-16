@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: bot-platform
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: MONGODB_URI
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          name: bot-platform
+          type: web
+          property: url

@@ -247,9 +247,15 @@ function createMusicBot(opts) {
                 const ch = await client.channels.fetch(forceChannelId);
                 const guild = client.guilds.cache.get(ch.guildId);
                 const me = guild?.members?.me;
-                if (me && me.voice.channelId) {
-                    console.log(`[${label}] البوت في روم (${me.voice.channelId}) — لا أقاوم ولا أتدخل.`);
-                    return;
+                if (me && me.voice.channelId === ch.id) {
+                    tries = 0;
+                    await sleep(20000);
+                    continue;
+                }
+                const existing = activeVoiceConns.get(guild.id);
+                if (existing && existing.state.status !== VoiceConnectionStatus.Destroyed && existing.state.status !== VoiceConnectionStatus.Failed) {
+                    await sleep(10000);
+                    continue;
                 }
                 const connection = hookConnection(joinVoiceChannel({
                     channelId: ch.id,
@@ -259,25 +265,26 @@ function createMusicBot(opts) {
                 const result = await waitForReady(connection);
                 if (result === 'ready') {
                     console.log(`[${label}] ✅ دخل فعلياً في روم ${ch.id} (Ready)`);
-                    return;
+                    tries = 0;
+                } else {
+                    tries++;
+                    console.error(`[${label}] محاولة الدخول للروم ${forceChannelId} لم تصل لـ Ready (${result}) — محاولة ${tries}`);
                 }
-                tries++;
-                console.error(`[${label}] محاولة الدخول للروم ${forceChannelId} لم تصل لـ Ready (${result}) — محاولة ${tries}/5`);
-                if (tries >= 5) {
-                    console.error(`[${label}] توقفت عن إعادة محاولة الروم ${forceChannelId} بعد 5 محاولات.`);
-                    return;
+                if (tries >= 10) {
+                    await sleep(60000);
+                    tries = 0;
+                } else {
+                    await sleep(15000);
                 }
-                if (shuttingDown) return;
-                await sleep(8000);
             } catch (e) {
                 tries++;
-                console.error(`[${label}] الدخول للروم ${forceChannelId} فشل: ${e.message} — محاولة ${tries}/5`);
-                if (tries >= 5) {
-                    console.error(`[${label}] توقفت عن إعادة محاولة الروم ${forceChannelId} بعد 5 محاولات.`);
-                    return;
+                console.error(`[${label}] الدخول للروم ${forceChannelId} فشل: ${e.message}`);
+                if (tries >= 10) {
+                    await sleep(60000);
+                    tries = 0;
+                } else {
+                    await sleep(15000);
                 }
-                if (shuttingDown) return;
-                await sleep(10000);
             }
         }
     }
@@ -507,6 +514,16 @@ function createMusicBot(opts) {
                     console.log(`[${label}] المستخدم مو داخل روم صوتي، أتجاهل`);
                     return;
                 }
+                if (forceChannelId) {
+                    const existing = activeVoiceConns.get(message.guild.id);
+                    const alreadyIn =
+                        (message.guild.members.me && message.guild.members.me.voice.channelId === forceChannelId) ||
+                        (existing && existing.state.status === VoiceConnectionStatus.Ready && existing.joinConfig && existing.joinConfig.channelId === forceChannelId);
+                    if (alreadyIn) {
+                        message.react('✅').catch((e) => console.error(`[${label}] فشل الرياكشن (بالروم): ${e.message}`));
+                        return;
+                    }
+                }
                 try {
                     const me = message.guild.members.me;
                     if (me && me.voice.channelId === userVoice.id) {
@@ -514,10 +531,9 @@ function createMusicBot(opts) {
                         return;
                     }
                     const targetCh = await client.channels.fetch(userVoice.id);
-                    if (forceChannelId !== targetCh.id) {
-                        forceChannelId = targetCh.id;
-                        if (onRoomUpdate) onRoomUpdate(targetCh.id);
-                        console.log(`[${label}] تمت إعادة توجيه الروم المحدد إلى ${targetCh.id}`);
+                    if (forceChannelId && forceChannelId !== targetCh.id) {
+                        console.log(`[${label}] تم تجاهل الاستدعاء — روم البوت محدد بـ ${forceChannelId} فقط.`);
+                        return;
                     }
                     rejoinTimers.delete(message.guild.id);
                     const connection = hookConnection(joinVoiceChannel({

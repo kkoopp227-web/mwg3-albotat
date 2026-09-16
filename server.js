@@ -124,7 +124,7 @@ app.get('/api/logs/:type', (req, res) => {
 app.get('/api/status', async (req, res) => {
     await refreshStatus();
     const status = {};
-    for (const t of ['music', 'ticket', 'server', 'separator', 'bank']) {
+    for (const t of ['music', 'ticket', 'server', 'separator', 'bank', 'system']) {
         status[t] = manager.isRunning(t);
     }
     res.json({ ok: true, status });

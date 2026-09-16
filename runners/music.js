@@ -1,72 +1,71 @@
+const { spawn } = require('child_process');
 const path = require('path');
-const BASE = path.join(__dirname, '..');
+const SINGLE = path.join(__dirname, 'music-instance.js');
+const CWD = path.join(__dirname, '..');
 
-process.env.PORT = '31001';
-
-const { createMusicBot, ensureYtdlp } = require(path.join(BASE, 'modules', 'music', 'musicBot.js'));
-
-function buildAliases(name) {
-    const stripped = String(name || '').replace(/^[#@]+/, '').toLowerCase().trim();
-    const set = new Set();
-    if (name) set.add(String(name).toLowerCase());
-    if (stripped) {
-        set.add(stripped);
-        set.add('#' + stripped);
-        set.add('@' + stripped);
-    }
-    return [...set];
-}
-
-const handles = [];
-
-async function main(payload) {
-    const { instances } = payload;
-    const ok = await ensureYtdlp();
-    if (!ok) console.error('تحذير: فشل تحضير yt-dlp — الأغاني لن تعمل على هذا الجهاز.');
-
-    for (const inst of instances) {
-        const cfg = inst.config || {};
-        const label = (cfg.label && String(cfg.label).trim())
-            ? String(cfg.label).replace(/^[#@]+/, '').trim()
-            : (inst.name || 'بوت أغاني');
-        if (!label) { console.error(`[${inst.name}] اختصار فارغ — تم تجاهله.`); continue; }
-        const allowedGuildIds = (cfg.guildId || process.env.ALLOWED_GUILD_ID || '')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean);
-        const allowedRoleId = cfg.allowedRoleId || process.env.CONTROL_ROLE_ID || '1548382659586166804';
-        try {
-            const handle = createMusicBot({
-                label,
-                aliases: buildAliases(label),
-                token: cfg.token,
-                stay247: cfg.stay247 !== false,
-                forceChannelId: cfg.roomId,
-                allowedGuildIds,
-                allowedRoleId,
-            });
-            await handle.client.login(cfg.token);
-            handles.push(handle);
-            console.log(`[${label}] تسجيل الدخول ناجح ✅ (room=${cfg.roomId})`);
-        } catch (e) {
-            console.error(`[${label}] فشل التسجيل: ${e.message}`);
-        }
-    }
-}
-
-process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e));
-process.on('uncaughtException', (e) => console.error('uncaughtException:', e));
-process.on('SIGTERM', () => {
-    for (const h of handles) {
-        try { h.destroy(); } catch (e) { /* تجاهل */ }
-    }
-    process.exit(0);
-});
-
+let payload;
 try {
-    const payload = JSON.parse(Buffer.from(process.env.PLATFORM_PAYLOAD || '', 'base64').toString('utf8'));
-    main(payload);
+    payload = JSON.parse(Buffer.from(process.env.PLATFORM_PAYLOAD || '', 'base64').toString('utf8'));
 } catch (e) {
     console.error('خطأ في تحليل البيانات:', e.message);
     process.exit(1);
 }
+
+const instances = payload.instances || [];
+const children = new Map();
+
+function spawnInstance(inst) {
+    const cfg = inst.config || {};
+    const label = (cfg.label && String(cfg.label).trim())
+        ? String(cfg.label).replace(/^[#@]+/, '').trim()
+        : (inst.name || inst.id);
+    const onePayload = Buffer.from(JSON.stringify({ instances: [inst] })).toString('base64');
+    const env = { ...process.env, PLATFORM_PAYLOAD: onePayload };
+    if (cfg.port) env.PORT = String(cfg.port);
+    const child = spawn(process.execPath, [SINGLE], {
+        cwd: CWD,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+    });
+    children.set(inst.id, { child, inst, label });
+    const prefix = `[${label}]`;
+    child.stdout.on('data', (d) => {
+        const lines = String(d).split('\n');
+        for (const l of lines) {
+            if (l.trim()) process.stdout.write(`${prefix} ${l}\n`);
+        }
+    });
+    child.stderr.on('data', (d) => {
+        const lines = String(d).split('\n');
+        for (const l of lines) {
+            if (l.trim()) process.stderr.write(`${prefix} ${l}\n`);
+        }
+    });
+    child.on('exit', (code, signal) => {
+        console.error(`${prefix} ⛔ توقف (code=${code} signal=${signal || ''})`);
+        children.delete(inst.id);
+        if (inst.enabled && code !== 0 && code !== null) {
+            console.log(`${prefix} 🔄 إعادة تشغيل تلقائية بعد 5 ثواني...`);
+            setTimeout(() => spawnInstance(inst), 5000);
+        }
+    });
+    child.on('error', (e) => {
+        console.error(`${prefix} ❌ فشل التشغيل: ${e.message}`);
+    });
+    console.log(`${prefix} 🚀 تشغيل بوت أغاني في عملية منفصلة`);
+}
+
+for (const inst of instances) {
+    spawnInstance(inst);
+}
+
+console.log(`🚀 تشغيل بوتات النوع (music) — ${instances.length} مثيل (${instances.length} عمليات منفصلة)`);
+
+process.on('SIGTERM', () => {
+    for (const [, { child, label }] of children) {
+        console.log(`[${label}] ⏹️ إيقاف...`);
+        try { child.kill('SIGTERM'); } catch (e) { /* تجاهل */ }
+    }
+    setTimeout(() => process.exit(0), 1000);
+});

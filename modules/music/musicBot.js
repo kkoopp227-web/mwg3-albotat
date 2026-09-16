@@ -240,51 +240,69 @@ function createMusicBot(opts) {
         });
     }
 
+    async function checkInOwnRoom() {
+        if (!forceChannelId) return false;
+        try {
+            const ch = await client.channels.fetch(forceChannelId);
+            const guild = client.guilds.cache.get(ch.guildId);
+            const me = guild && guild.members.me;
+            return !!(me && me.voice.channelId === ch.id);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async function forceJoinOwnRoom() {
+        if (!forceChannelId || shuttingDown) return;
+        try {
+            const ch = await client.channels.fetch(forceChannelId);
+            const guild = client.guilds.cache.get(ch.guildId);
+            if (!guild) return;
+            const me = guild.members.me;
+            if (me && me.voice.channelId === ch.id) return;
+            const existing = activeVoiceConns.get(guild.id);
+            if (existing && existing.state.status === VoiceConnectionStatus.Destroyed) {
+                activeVoiceConns.delete(guild.id);
+            }
+            const connection = hookConnection(joinVoiceChannel({
+                channelId: ch.id,
+                guildId: ch.guildId,
+                adapterCreator: ch.guild.voiceAdapterCreator,
+            }), ch);
+            const result = await waitForReady(connection);
+            if (result === 'ready') {
+                console.log(`[${label}] ✅ رجعت لرومي ${ch.id} (Ready)`);
+            } else {
+                console.error(`[${label}] فشل العودة للروم ${forceChannelId} (${result})`);
+            }
+        } catch (e) {
+            console.error(`[${label}] فشل العودة للروم ${forceChannelId}: ${e.message}`);
+        }
+    }
+
     async function keepJoinedLoop() {
         let tries = 0;
         while (!shuttingDown) {
             try {
-                const ch = await client.channels.fetch(forceChannelId);
-                const guild = client.guilds.cache.get(ch.guildId);
-                const me = guild?.members?.me;
-                if (me && me.voice.channelId === ch.id) {
+                const inOwn = await checkInOwnRoom();
+                if (inOwn) {
                     tries = 0;
                     await sleep(20000);
                     continue;
                 }
-                const existing = activeVoiceConns.get(guild.id);
-                if (existing && existing.state.status !== VoiceConnectionStatus.Destroyed && existing.state.status !== VoiceConnectionStatus.Failed) {
-                    await sleep(10000);
-                    continue;
-                }
-                const connection = hookConnection(joinVoiceChannel({
-                    channelId: ch.id,
-                    guildId: ch.guildId,
-                    adapterCreator: ch.guild.voiceAdapterCreator,
-                }), ch);
-                const result = await waitForReady(connection);
-                if (result === 'ready') {
-                    console.log(`[${label}] ✅ دخل فعلياً في روم ${ch.id} (Ready)`);
-                    tries = 0;
-                } else {
-                    tries++;
-                    console.error(`[${label}] محاولة الدخول للروم ${forceChannelId} لم تصل لـ Ready (${result}) — محاولة ${tries}`);
-                }
+                tries++;
+                console.error(`[${label}] البوت مو داخل رومه (${forceChannelId}) — محاولة العودة ${tries}`);
+                await forceJoinOwnRoom();
                 if (tries >= 10) {
-                    await sleep(60000);
                     tries = 0;
+                    await sleep(60000);
                 } else {
-                    await sleep(15000);
+                    await sleep(20000);
                 }
             } catch (e) {
                 tries++;
-                console.error(`[${label}] الدخول للروم ${forceChannelId} فشل: ${e.message}`);
-                if (tries >= 10) {
-                    await sleep(60000);
-                    tries = 0;
-                } else {
-                    await sleep(15000);
-                }
+                console.error(`[${label}] خطأ في حلقة الروم: ${e.message}`);
+                await sleep(20000);
             }
         }
     }
@@ -308,6 +326,15 @@ function createMusicBot(opts) {
         if (!allowedGuildIds || allowedGuildIds.includes(guild.id)) return;
         console.log(`[${label}] تمت دعوتي لسيرفر غير مسموح (${guild.id}) — يخرج فوراً.`);
         guild.leave().catch(() => {});
+    });
+
+    client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+        const mine = newState.member && newState.member.id === client.user.id;
+        if (!mine) return;
+        if (forceChannelId && newState.channelId && newState.channelId !== forceChannelId) {
+            console.log(`[${label}] حركتوني من رومي إلى ${newState.channelId} — أرجع فوراً.`);
+            setTimeout(forceJoinOwnRoom, 1500);
+        }
     });
 
     function destroy() {

@@ -84,6 +84,21 @@ const TYPES = {
             { key: 'prefix', label: 'البريفكس (افتراضي: -)', type: 'text', required: false },
         ],
     },
+    system: {
+        id: 'system',
+        label: 'بوت السستم',
+        icon: '🛑',
+        color: '#FF6133',
+        description: 'بوت إدارة ومراقبة: سجن، إسكات، ميوت، رتب، قفل رومات، لوحات سلاش وسجلات.',
+        fields: [
+            { key: 'token', label: 'توكن البوت', type: 'token', required: true },
+            { key: 'clientId', label: 'ايدي البوت (Client ID)', type: 'text', required: true },
+            { key: 'guildId', label: 'ايدي السيرفر', type: 'text', required: true },
+            { key: 'slashChannelId', label: 'ايدي قناة الأوامر (سلاش)', type: 'text', required: false },
+            { key: 'slashLogChannelId', label: 'ايدي قناة لوق السلاش', type: 'text', required: false },
+            { key: 'slashRoleId', label: 'ايدي رول الصلاحيات (سلاش)', type: 'text', required: false },
+        ],
+    },
 };
 
 function getTypes() {

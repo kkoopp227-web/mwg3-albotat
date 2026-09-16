@@ -180,6 +180,7 @@ function createMusicBot(opts) {
         .filter(Boolean);
     const stay247 = !!opts.stay247;
     let forceChannelId = opts.forceChannelId || null;
+    const voiceGroup = opts.voiceGroup || 'default';
     const musicEnabled = opts.musicEnabled !== false;
     const onRoomUpdate = typeof opts.onRoomUpdate === 'function' ? opts.onRoomUpdate : null;
     const allowedGuildIds = Array.isArray(opts.allowedGuildIds) && opts.allowedGuildIds.length ? opts.allowedGuildIds : null;
@@ -267,6 +268,7 @@ function createMusicBot(opts) {
             const connection = hookConnection(joinVoiceChannel({
                 channelId: ch.id,
                 guildId: ch.guildId,
+                group: voiceGroup,
                 adapterCreator: ch.guild.voiceAdapterCreator,
             }), ch);
             const result = await waitForReady(connection);
@@ -448,6 +450,7 @@ function createMusicBot(opts) {
             connection = joinVoiceChannel({
                 channelId: voiceChannel.id,
                 guildId: message.guild.id,
+                group: voiceGroup,
                 adapterCreator: message.guild.voiceAdapterCreator,
             });
             q.connection = connection;
@@ -566,6 +569,7 @@ function createMusicBot(opts) {
                     const connection = hookConnection(joinVoiceChannel({
                         channelId: targetCh.id,
                         guildId: targetCh.guildId,
+                        group: voiceGroup,
                         adapterCreator: targetCh.guild.voiceAdapterCreator,
                     }), targetCh);
                     let reacted = false;

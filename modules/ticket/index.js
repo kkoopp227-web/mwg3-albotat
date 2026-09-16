@@ -238,14 +238,18 @@ client.once(Events.ClientReady, async () => {
   }
 
   if (data.panelChannelId) {
-    const channel = client.channels.cache.get(data.panelChannelId);
-    if (!channel) {
-      console.log('⚠️ لم يتم العثور على قناة لوحة التذاكر');
-    } else if (await panelAlreadySent(channel)) {
-      console.log('ℹ️ اللوحة موجودة مسبقاً');
-    } else {
-      await sendPanel(channel);
-      console.log('✅ تم إرسال لوحة التذاكر');
+    try {
+      const channel = client.channels.cache.get(data.panelChannelId);
+      if (!channel) {
+        console.log('⚠️ لم يتم العثور على قناة لوحة التذاكر');
+      } else if (await panelAlreadySent(channel)) {
+        console.log('ℹ️ اللوحة موجودة مسبقاً');
+      } else {
+        await sendPanel(channel);
+        console.log('✅ تم إرسال لوحة التذاكر');
+      }
+    } catch (err) {
+      console.error('⚠️ فشل إرسال اللوحة تلقائياً:', err.message);
     }
   } else {
     console.log('ℹ️ استخدم /settings panel_channel لتحديد قناة اللوحة');
@@ -359,6 +363,8 @@ async function sendTopBoard(channel, page = 1) {
 // ===== لوحة التذاكر =====
 function buildPanelEmbed() {
   const embed = new EmbedBuilder().setColor(config.color || 0x5865f2);
+  if (data.panelTitle) embed.setTitle(data.panelTitle);
+  if (data.panelDescription) embed.setDescription(data.panelDescription);
   if (data.panelImage) embed.setImage(data.panelImage);
   return embed;
 }

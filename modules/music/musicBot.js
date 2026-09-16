@@ -566,11 +566,14 @@ function createMusicBot(opts) {
             if (!isCommand) return;
 
             const botVoice = message.guild.members.me.voice.channel;
-            if (botVoice) {
-                const userVoice = message.member.voice.channel;
-                if (!userVoice || userVoice.id !== botVoice.id) {
+            const userVoice = message.member.voice.channel;
+            if (forceChannelId) {
+                if (!userVoice || userVoice.id !== forceChannelId) {
+                    console.log(`[${label}] تم تجاهل الأمر — المستخدم ليس في روم البوت (${forceChannelId}).`);
                     return;
                 }
+            } else if (botVoice && (!userVoice || userVoice.id !== botVoice.id)) {
+                return;
             }
 
             const boundChannelId = boundChannels.get(message.guild.id);

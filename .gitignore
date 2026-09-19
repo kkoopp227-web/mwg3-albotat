@@ -1,0 +1,13 @@
+node_modules/
+.env
+data/instances.json
+data/*.log
+modules/*/bin/
+modules/*/config.json
+modules/*/data.json
+modules/*/bots.json
+modules/*/node_modules/
+modules/*/*.log
+modules/separator/images/
+*.log
+.DS_Store

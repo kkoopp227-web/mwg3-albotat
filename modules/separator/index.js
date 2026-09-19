@@ -1366,7 +1366,13 @@ client.on('messageCreate', async message => {
 
             if (/^https?:\/\//i.test(url)) {
                 if (isText) {
-                    separatorMessage = await message.channel.send({ files: [url] });
+                    let sepName = 'separator.png';
+                    try {
+                        const p = new URL(url).pathname;
+                        const ext = (p.split('.').pop() || '').toLowerCase();
+                        if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].includes(ext)) sepName = 'separator.' + ext;
+                    } catch (e) { /* keep default */ }
+                    separatorMessage = await message.channel.send({ files: [{ attachment: url, name: sepName }] });
                 } else {
                     const embed = new EmbedBuilder()
                         .setColor('#2b2d31')

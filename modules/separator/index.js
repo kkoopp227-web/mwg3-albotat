@@ -15,7 +15,53 @@ const {
 const { PNG } = require('pngjs');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const db = require('./database');
+
+const IMAGES_DIR = path.join(__dirname, 'images');
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'];
+
+function imageBaseFor(url) {
+    return path.join(IMAGES_DIR, crypto.createHash('md5').update(String(url)).digest('hex'));
+}
+
+function findCached(url) {
+    const base = imageBaseFor(url);
+    for (const ext of IMAGE_EXTS) {
+        const p = base + '.' + ext;
+        if (fs.existsSync(p)) return p;
+    }
+    return null;
+}
+
+function sniffExt(buf) {
+    if (!buf || buf.length < 12) return 'png';
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'gif';
+    if (buf.subarray(0, 4).toString('ascii') === 'RIFF') return 'webp';
+    if (buf[0] === 0x42 && buf[1] === 0x4d) return 'bmp';
+    return 'png';
+}
+
+async function localizeImage(url) {
+    if (!/^https?:\/\//i.test(url)) return null;
+    const cached = findCached(url);
+    if (cached) return cached;
+    try {
+        const res = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (!res.ok) return null;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (!buf.length) return null;
+        const finalPath = imageBaseFor(url) + '.' + sniffExt(buf);
+        await fs.promises.mkdir(IMAGES_DIR, { recursive: true });
+        await fs.promises.writeFile(finalPath, buf);
+        return finalPath;
+    } catch (e) {
+        console.error('separator image cache failed:', e.message);
+        return null;
+    }
+}
 
 // Keep the process alive: never let a silent error kill the bot
 process.on('unhandledRejection', (reason) => {
@@ -1365,12 +1411,15 @@ client.on('messageCreate', async message => {
             const isText = message.channel.isTextBased && message.channel.isTextBased();
 
             if (/^https?:\/\//i.test(url)) {
-                if (isText) {
+                const local = await localizeImage(url);
+                if (local && isText) {
+                    separatorMessage = await message.channel.send({ files: [local] });
+                } else if (isText) {
                     let sepName = 'separator.png';
                     try {
                         const p = new URL(url).pathname;
                         const ext = (p.split('.').pop() || '').toLowerCase();
-                        if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].includes(ext)) sepName = 'separator.' + ext;
+                        if (IMAGE_EXTS.includes(ext)) sepName = 'separator.' + ext;
                     } catch (e) { /* keep default */ }
                     separatorMessage = await message.channel.send({ files: [{ attachment: url, name: sepName }] });
                 } else {

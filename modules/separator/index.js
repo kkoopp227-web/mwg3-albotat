@@ -1566,16 +1566,42 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Level system - +5 or +8 voice points per minute connected (non-bot users)
+// Level system - voice points based on mute/deaf state:
+// deaf+mute => no points;  mute (no deaf) => 1 point every 5 minutes;  normal => 1 point per minute
+let voiceMeters = new Map();
 setInterval(() => {
+    const next = new Map();
     for (const guild of client.guilds.cache.values()) {
         for (const vs of guild.voiceStates.cache.values()) {
-            if (vs.channelId && vs.member && !vs.member.user.bot) {
-                const voicePts = Math.random() < 0.5 ? 8 : 5;
-                db.bumpLevelVoice(guild.id, vs.member.id, voicePts).catch(() => {});
+            if (!vs.channelId || !vs.member || vs.member.user.bot) continue;
+            const uid = vs.member.id;
+            const muted = !!(vs.selfMute || vs.serverMute);
+            const deaf = !!(vs.selfDeaf || vs.serverDeaf);
+            const partial = voiceMeters.get(uid) || 0;
+
+            if (deaf && muted) {
+                next.set(uid, 0);
+                continue;
             }
+
+            const voicePts = Math.random() < 0.5 ? 8 : 5;
+
+            if (muted && !deaf) {
+                const soft = partial + 1;
+                if (soft >= 5) {
+                    db.bumpLevelVoice(guild.id, uid, voicePts).catch(() => {});
+                    next.set(uid, 0);
+                } else {
+                    next.set(uid, soft);
+                }
+                continue;
+            }
+
+            db.bumpLevelVoice(guild.id, uid, voicePts).catch(() => {});
+            next.set(uid, 0);
         }
     }
+    voiceMeters = next;
 }, 60000);
 
 client.login(process.env.DISCORD_TOKEN);

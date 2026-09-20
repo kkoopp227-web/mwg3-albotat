@@ -1279,6 +1279,9 @@ client.on('messageCreate', async message => {
                 msgPoints: stats.msg_points || 0,
                 msgCount: stats.msg_count || 0,
                 voicePoints: stats.voice_points || 0,
+                voiceMinutes: stats.voice_minutes || 0,
+                weekMsgCount: stats.week_msg_count || 0,
+                weekVoiceMinutes: stats.week_voice_minutes || 0,
             });
             return message.reply({ files: [{ attachment: buf, name: 'level-card.png' }] });
         } catch (error) {

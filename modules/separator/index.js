@@ -1261,8 +1261,9 @@ client.on('messageCreate', async message => {
     if (message.author.bot) return;
     if (!isAllowedGuild(message.guild && message.guild.id)) return;
 
-    // Level system - count every non-bot message
-    db.bumpLevelMessage(message.guild.id, message.author.id).catch(() => {});
+    // Level system - count every non-bot message (+10 or +15 pts)
+    const msgPts = Math.random() < 0.5 ? 15 : 10;
+    db.bumpLevelMessage(message.guild.id, message.author.id, msgPts).catch(() => {});
 
     // Level profile command
     const lvTrim = message.content.trim().toLowerCase();
@@ -1276,6 +1277,7 @@ client.on('messageCreate', async message => {
                 displayName,
                 guildName: message.guild.name,
                 msgPoints: stats.msg_points || 0,
+                msgCount: stats.msg_count || 0,
                 voicePoints: stats.voice_points || 0,
             });
             return message.reply({ files: [{ attachment: buf, name: 'level-card.png' }] });
@@ -1472,12 +1474,13 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Level system - +1 voice point per minute connected (non-bot users)
+// Level system - +5 or +8 voice points per minute connected (non-bot users)
 setInterval(() => {
     for (const guild of client.guilds.cache.values()) {
         for (const vs of guild.voiceStates.cache.values()) {
             if (vs.channelId && vs.member && !vs.member.user.bot) {
-                db.bumpLevelVoice(guild.id, vs.member.id, 1).catch(() => {});
+                const voicePts = Math.random() < 0.5 ? 8 : 5;
+                db.bumpLevelVoice(guild.id, vs.member.id, voicePts).catch(() => {});
             }
         }
     }

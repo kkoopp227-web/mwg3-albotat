@@ -135,9 +135,57 @@ function drawPanel(ctx, y, width, title, points, detail) {
     }
 }
 
-async function createLevelCard({ avatarURL, username, displayName, guildName, msgPoints, msgCount, voicePoints }) {
+function drawWeeklyPanel(ctx, y, width, weekMsgCount, weekVoiceMinutes) {
+    const pW = width - 90;
+    const pH = 160;
+    const x = 45;
+
+    ctx.fillStyle = C.panel;
+    roundRect(ctx, x, y, pW, pH, 22);
+    ctx.fill();
+    ctx.strokeStyle = C.panelBorder;
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, x, y, pW, pH, 22);
+    ctx.stroke();
+
+    ctx.fillStyle = C.blue;
+    roundRect(ctx, x, y + 26, 6, pH - 52, 3);
+    ctx.fill();
+
+    ctx.textBaseline = 'middle';
+
+    ctx.font = '26px Tajawal';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = C.white;
+    ctx.fillText('تفاعلك في هذا الأسبوع', x + pW - 34, y + 38);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(x + 34, y + 68, pW - 68, 1);
+
+    ctx.font = '20px Tajawal';
+    ctx.fillStyle = C.muted;
+    ctx.textAlign = 'right';
+    ctx.fillText('رسائل هذا الأسبوع', x + pW - 34, y + 102);
+
+    ctx.font = 'bold 32px Tajawal';
+    ctx.fillStyle = C.blueLight;
+    fitText(ctx, fmt(weekMsgCount) + ' رسالة', (pW - 100) / 2);
+    ctx.fillText(fmt(weekMsgCount) + ' رسالة', x + pW - 34, y + 136);
+
+    ctx.font = '20px Tajawal';
+    ctx.fillStyle = C.muted;
+    ctx.textAlign = 'left';
+    ctx.fillText('الصوت هذا الأسبوع', x + 34, y + 102);
+
+    ctx.font = 'bold 32px Tajawal';
+    ctx.fillStyle = C.blueLight;
+    fitText(ctx, formatVoiceDuration(weekVoiceMinutes), (pW - 100) / 2);
+    ctx.fillText(formatVoiceDuration(weekVoiceMinutes), x + 34, y + 136);
+}
+
+async function createLevelCard({ avatarURL, username, displayName, guildName, msgPoints, msgCount, voicePoints, voiceMinutes, weekMsgCount, weekVoiceMinutes }) {
     const width = 700;
-    const height = 1050;
+    const height = 1240;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -218,9 +266,12 @@ async function createLevelCard({ avatarURL, username, displayName, guildName, ms
 
     const panel1Y = avY + avSize + 138;
     drawPanel(ctx, panel1Y, width, 'المستوى في الرسائل', msgPoints, 'عدد رسائلك في السيرفر: ' + fmt(msgCount || 0) + ' رسالة');
-    drawPanel(ctx, panel1Y + 216, width, 'المستوى في الصوت', voicePoints, 'مدة صوتك: ' + formatVoiceDuration(voicePoints));
+    drawPanel(ctx, panel1Y + 216, width, 'المستوى في الصوت', voicePoints, 'مدة صوتك: ' + formatVoiceDuration(voiceMinutes || 0));
 
-    const footY = panel1Y + 432;
+    const weeklyY = panel1Y + 432;
+    drawWeeklyPanel(ctx, weeklyY, width, weekMsgCount || 0, weekVoiceMinutes || 0);
+
+    const footY = weeklyY + 188;
     ctx.fillStyle = 'rgba(59,130,246,0.5)';
     ctx.fillRect(50, footY, width - 100, 2);
 

@@ -45,6 +45,16 @@ function fmt(n) {
     return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
+function fitText(ctx, text, maxW) {
+    while (ctx.measureText(text).width > maxW) {
+        const m = ctx.font.match(/(\d+(?:\.\d+)?)px/);
+        if (!m) break;
+        const size = parseFloat(m[1]);
+        if (size <= 9) break;
+        ctx.font = ctx.font.replace(m[1], (size - 1).toString());
+    }
+}
+
 function calcLevel(points) {
     const level = Math.min(MAX_LEVEL, Math.floor(points / POINTS_PER_LEVEL));
     const intoLevel = points % POINTS_PER_LEVEL;
@@ -107,12 +117,15 @@ function drawPanel(ctx, y, width, title, points, detail) {
     roundRect(ctx, barX, barY, fillW, barH, barH / 2);
     ctx.fill();
 
-    ctx.font = '20px Tajawal';
+    ctx.font = '19px Tajawal';
     ctx.fillStyle = C.muted2;
     ctx.textAlign = 'left';
+    fitText(ctx, detail, pW - 200);
     ctx.fillText(detail, x + 34, y + 156);
 
-    ctx.font = '18px Tajawal';
+    ctx.font = '17px Tajawal';
+    fitText(ctx, lv.level >= MAX_LEVEL ? 'وصلت لأعلى مستوى 150' : 'المتبقي ' + fmt(lv.toNext) + ' نقطة للمستوى التالي', pW - 200);
+    ctx.textAlign = 'right';
     if (lv.level >= MAX_LEVEL) {
         ctx.fillStyle = C.blueLight;
         ctx.fillText('وصلت لأعلى مستوى 150', x + pW - 34, y + 156);
@@ -122,7 +135,7 @@ function drawPanel(ctx, y, width, title, points, detail) {
     }
 }
 
-async function createLevelCard({ avatarURL, username, displayName, guildName, msgPoints, voicePoints }) {
+async function createLevelCard({ avatarURL, username, displayName, guildName, msgPoints, msgCount, voicePoints }) {
     const width = 700;
     const height = 1050;
     const canvas = createCanvas(width, height);
@@ -204,7 +217,7 @@ async function createLevelCard({ avatarURL, username, displayName, guildName, ms
     ctx.fillText('بطاقة تفاعلك في السيرفر', width / 2, avY + avSize + 92);
 
     const panel1Y = avY + avSize + 138;
-    drawPanel(ctx, panel1Y, width, 'المستوى في الرسائل', msgPoints, 'عدد رسائلك في السيرفر: ' + fmt(msgPoints) + ' رسالة');
+    drawPanel(ctx, panel1Y, width, 'المستوى في الرسائل', msgPoints, 'عدد رسائلك في السيرفر: ' + fmt(msgCount || 0) + ' رسالة');
     drawPanel(ctx, panel1Y + 216, width, 'المستوى في الصوت', voicePoints, 'مدة صوتك: ' + formatVoiceDuration(voicePoints));
 
     const footY = panel1Y + 432;
@@ -218,7 +231,7 @@ async function createLevelCard({ avatarURL, username, displayName, guildName, ms
 
     ctx.font = 'bold 62px Tajawal';
     ctx.fillStyle = C.white;
-    ctx.fillText(fmt(msgPoints), width / 2, footY + 104);
+    ctx.fillText(fmt(msgCount || 0), width / 2, footY + 104);
 
     ctx.font = '22px Tajawal';
     ctx.fillStyle = C.muted2;

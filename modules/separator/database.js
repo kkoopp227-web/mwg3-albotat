@@ -279,6 +279,14 @@ async function getTopLevels(guildId, page) {
     }));
 }
 
+async function getLevelRank(guildId, userId) {
+    const doc = await Level.findOne({ key: `${guildId}:${userId}` });
+    if (!doc || !(doc.total_points > 0)) return null;
+    const above = await Level.countDocuments({ guild_id: guildId, total_points: { $gt: doc.total_points } });
+    const tie = await Level.countDocuments({ guild_id: guildId, total_points: doc.total_points, msg_count: { $gt: doc.msg_count || 0 } });
+    return above + tie + 1;
+}
+
 module.exports = {
     getSeparator,
     setSeparator,
@@ -303,5 +311,6 @@ module.exports = {
     bumpLevelVoice,
     getLevelStats,
     getLevelCount,
-    getTopLevels
+    getTopLevels,
+    getLevelRank
 };

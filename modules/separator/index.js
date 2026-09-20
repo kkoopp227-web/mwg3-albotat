@@ -1334,16 +1334,38 @@ client.on('messageCreate', async message => {
     const msgPts = Math.random() < 0.5 ? 15 : 10;
     db.bumpLevelMessage(message.guild.id, message.author.id, msgPts).catch(() => {});
 
-    // Level profile command
+    // Level profile command: id / ii (+ optional @mention or user ID)
     const lvTrim = message.content.trim().toLowerCase();
-    if (lvTrim === 'id' || lvTrim === 'ii') {
+    if (/^id\b/.test(lvTrim) || /^ii\b/.test(lvTrim)) {
         try {
-            const stats = await db.getLevelStats(message.guild.id, message.author.id);
-            const displayName = (message.member && message.member.displayName) || message.author.username;
-            const topRank = await db.getLevelRank(message.guild.id, message.author.id);
+            let targetUser = message.author;
+            const rest = message.content.replace(/^(id|ii)/i, '').trim();
+            if (rest) {
+                const mention = message.mentions.users.first();
+                if (mention) {
+                    targetUser = mention;
+                } else {
+                    const idMatch = rest.match(/\b(\d{17,20})\b/);
+                    if (idMatch) {
+                        const fetched = await client.users.fetch(idMatch[1]).catch(() => null);
+                        if (fetched) targetUser = fetched;
+                    }
+                }
+            }
+
+            let targetMember = message.guild.members.cache.get(targetUser.id);
+            if (!targetMember) {
+                try {
+                    targetMember = await message.guild.members.fetch(targetUser.id);
+                } catch (_) {}
+            }
+
+            const stats = await db.getLevelStats(message.guild.id, targetUser.id);
+            const displayName = (targetMember && targetMember.displayName) || targetUser.username;
+            const topRank = await db.getLevelRank(message.guild.id, targetUser.id);
             const buf = await createLevelCard({
-                avatarURL: message.author.displayAvatarURL({ extension: 'png', size: 512 }),
-                username: message.author.username,
+                avatarURL: targetUser.displayAvatarURL({ extension: 'png', size: 512 }),
+                username: targetUser.username,
                 displayName,
                 guildName: message.guild.name,
                 msgPoints: stats.msg_points || 0,

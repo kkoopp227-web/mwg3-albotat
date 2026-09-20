@@ -58,6 +58,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates,
     ],
 });
 
@@ -1833,8 +1834,16 @@ client.on('messageCreate', async (message) => {
 
         const targetMember = message.guild.members.cache.get(user.id) || await message.guild.members.fetch(user.id).catch(() => null);
         
-        // 1. Voice Channel Check
-        if (targetMember?.voice.channel) {
+        // 1. Voice Channel Check (live state + valid channel only)
+        let inVoice = false;
+        try {
+            const vs = message.guild.voiceStates.cache.get(user.id);
+            if (vs && vs.channelId) {
+                const ch = message.guild.channels.cache.get(vs.channelId);
+                inVoice = !!(ch && ch.isVoiceBased());
+            }
+        } catch (e) { /* ignore */ }
+        if (inVoice) {
             return message.reply('❌ لا يمكنك نهب شخص موجود في روم صوتي!');
         }
 

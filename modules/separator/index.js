@@ -86,6 +86,37 @@ const client = new Client({
 
 const PREFIX = process.env.PREFIX || '-';
 
+// Automatic voice-level role rewards
+const VOICE_ROLE_REWARDS = [
+    { level: 4, roleId: '1548148472815951932' },
+    { level: 11, roleId: '1548148469393395732' },
+    { level: 35, roleId: '1548148465647747102' },
+    { level: 70, roleId: '1548148462036586626' },
+];
+const VOICE_LEVEL_POINTS = 5000;
+
+async function checkVoiceRoleRewards(guild, member) {
+    if (!guild || !member || member.user.bot) return;
+    const stats = await db.getLevelStats(guild.id, member.id).catch(() => null);
+    if (!stats) return;
+    const vLevel = Math.min(150, Math.floor((stats.voice_points || 0) / VOICE_LEVEL_POINTS));
+    for (const reward of VOICE_ROLE_REWARDS) {
+        if (vLevel >= reward.level && !member.roles.cache.has(reward.roleId)) {
+            try {
+                await member.roles.add(reward.roleId);
+                const roleName = (guild.roles.cache.get(reward.roleId) || {}).name || 'رول';
+                await member.send(
+                    `🎉 مبروك وصلت للفل ${reward.level}!\n` +
+                    `واخذت رول: **${roleName}**\n` +
+                    `هاذا رول تفاعلي 🎧`
+                ).catch(() => {});
+            } catch (error) {
+                console.error('Voice role reward error:', error.message);
+            }
+        }
+    }
+}
+
 // Leaderboard navigation buttons row
 function topNavRow(page, totalPages) {
     return new ActionRowBuilder().addComponents(
@@ -1590,8 +1621,7 @@ client.on('messageCreate', async message => {
 
 // Level system - voice points based on mute/deaf state:
 // deaf+mute => no points;  mute (no deaf) => 1 point every 5 minutes;  normal => 1 point per minute
-let voiceMeters = new Map();
-setInterval(() => {
+async function voiceTick() {
     const next = new Map();
     for (const guild of client.guilds.cache.values()) {
         for (const vs of guild.voiceStates.cache.values()) {
@@ -1611,19 +1641,26 @@ setInterval(() => {
             if (muted && !deaf) {
                 const soft = partial + 1;
                 if (soft >= 5) {
-                    db.bumpLevelVoice(guild.id, uid, voicePts).catch(() => {});
+                    await db.bumpLevelVoice(guild.id, uid, voicePts).catch(() => {});
                     next.set(uid, 0);
                 } else {
                     next.set(uid, soft);
                 }
+                if (soft >= 5) await checkVoiceRoleRewards(guild, vs.member).catch(() => {});
                 continue;
             }
 
-            db.bumpLevelVoice(guild.id, uid, voicePts).catch(() => {});
+            await db.bumpLevelVoice(guild.id, uid, voicePts).catch(() => {});
             next.set(uid, 0);
+            await checkVoiceRoleRewards(guild, vs.member).catch(() => {});
         }
     }
     voiceMeters = next;
+}
+
+let voiceMeters = new Map();
+setInterval(() => {
+    voiceTick().catch(() => {});
 }, 60000);
 
 client.login(process.env.DISCORD_TOKEN);

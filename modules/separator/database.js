@@ -40,6 +40,7 @@ const LevelSchema = new mongoose.Schema({
     msg_count: { type: Number, default: 0 },
     voice_points: { type: Number, default: 0 },
     voice_minutes: { type: Number, default: 0 },
+    total_points: { type: Number, default: 0 },
     week_key: String,
     week_msg_count: { type: Number, default: 0 },
     week_voice_points: { type: Number, default: 0 },
@@ -194,6 +195,7 @@ async function bumpLevelMessage(guildId, userId, amount) {
             $set: {
                 msg_points: { $add: [{ $ifNull: ['$msg_points', 0] }, amount || 1] },
                 msg_count: { $add: [{ $ifNull: ['$msg_count', 0] }, 1] },
+                total_points: { $add: [{ $ifNull: ['$total_points', 0] }, amount || 1] },
                 week_msg_count: {
                     $cond: [{ $eq: ['$week_key', wk] }, { $add: [{ $ifNull: ['$week_msg_count', 0] }, 1] }, 1]
                 },
@@ -215,6 +217,7 @@ async function bumpLevelVoice(guildId, userId, amount) {
             $set: {
                 voice_minutes: { $add: [{ $ifNull: ['$voice_minutes', 0] }, 1] },
                 voice_points: { $add: [{ $ifNull: ['$voice_points', 0] }, amount || 1] },
+                total_points: { $add: [{ $ifNull: ['$total_points', 0] }, amount || 1] },
                 week_voice_minutes: {
                     $cond: [{ $eq: ['$week_key', wk] }, { $add: [{ $ifNull: ['$week_voice_minutes', 0] }, 1] }, 1]
                 },
@@ -256,6 +259,26 @@ async function getLevelStats(guildId, userId) {
         };
 }
 
+async function getLevelCount(guildId) {
+    return await Level.countDocuments({ guild_id: guildId, total_points: { $gt: 0 } });
+}
+
+async function getTopLevels(guildId, page) {
+    const limit = 10;
+    const skip = Math.max(0, (page - 1) * limit);
+    const docs = await Level.find({ guild_id: guildId, total_points: { $gt: 0 } })
+        .sort({ total_points: -1, msg_count: -1 })
+        .skip(skip)
+        .limit(limit);
+    return docs.map(d => ({
+        user_id: d.user_id,
+        msg_points: d.msg_points || 0,
+        voice_points: d.voice_points || 0,
+        total_points: d.total_points || 0,
+        level: Math.min(150, Math.floor((d.total_points || 0) / 5000))
+    }));
+}
+
 module.exports = {
     getSeparator,
     setSeparator,
@@ -278,5 +301,7 @@ module.exports = {
     removeRoom,
     bumpLevelMessage,
     bumpLevelVoice,
-    getLevelStats
+    getLevelStats,
+    getLevelCount,
+    getTopLevels
 };

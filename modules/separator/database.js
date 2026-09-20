@@ -39,6 +39,11 @@ const LevelSchema = new mongoose.Schema({
     msg_points: { type: Number, default: 0 },
     msg_count: { type: Number, default: 0 },
     voice_points: { type: Number, default: 0 },
+    voice_minutes: { type: Number, default: 0 },
+    week_key: String,
+    week_msg_count: { type: Number, default: 0 },
+    week_voice_points: { type: Number, default: 0 },
+    week_voice_minutes: { type: Number, default: 0 },
     updated_at: { type: Date, default: Date.now }
 });
 const Level = mongoose.model('Level', LevelSchema);
@@ -175,24 +180,53 @@ async function removeRoom(channelId) {
 }
 
 // Helper functions for Level system
+function weekKeyNow() {
+    const d = new Date();
+    const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+    return `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`;
+}
+
 async function bumpLevelMessage(guildId, userId, amount) {
+    const wk = weekKeyNow();
     await Level.findOneAndUpdate(
         { key: `${guildId}:${userId}` },
-        {
-            $inc: { msg_points: amount || 1, msg_count: 1 },
-            $set: { guild_id: guildId, user_id: userId, updated_at: new Date() }
-        },
+        [{
+            $set: {
+                msg_points: { $add: [{ $ifNull: ['$msg_points', 0] }, amount || 1] },
+                msg_count: { $add: [{ $ifNull: ['$msg_count', 0] }, 1] },
+                week_msg_count: {
+                    $cond: [{ $eq: ['$week_key', wk] }, { $add: [{ $ifNull: ['$week_msg_count', 0] }, 1] }, 1]
+                },
+                week_key: wk,
+                guild_id: guildId,
+                user_id: userId,
+                updated_at: new Date()
+            }
+        }],
         { upsert: true, new: true }
     );
 }
 
 async function bumpLevelVoice(guildId, userId, amount) {
+    const wk = weekKeyNow();
     await Level.findOneAndUpdate(
         { key: `${guildId}:${userId}` },
-        {
-            $inc: { voice_points: amount || 1 },
-            $set: { guild_id: guildId, user_id: userId, updated_at: new Date() }
-        },
+        [{
+            $set: {
+                voice_minutes: { $add: [{ $ifNull: ['$voice_minutes', 0] }, 1] },
+                voice_points: { $add: [{ $ifNull: ['$voice_points', 0] }, amount || 1] },
+                week_voice_minutes: {
+                    $cond: [{ $eq: ['$week_key', wk] }, { $add: [{ $ifNull: ['$week_voice_minutes', 0] }, 1] }, 1]
+                },
+                week_voice_points: {
+                    $cond: [{ $eq: ['$week_key', wk] }, { $add: [{ $ifNull: ['$week_voice_points', 0] }, amount || 1] }, amount || 1]
+                },
+                week_key: wk,
+                guild_id: guildId,
+                user_id: userId,
+                updated_at: new Date()
+            }
+        }],
         { upsert: true, new: true }
     );
 }
@@ -200,8 +234,26 @@ async function bumpLevelVoice(guildId, userId, amount) {
 async function getLevelStats(guildId, userId) {
     const doc = await Level.findOne({ key: `${guildId}:${userId}` });
     return doc
-        ? { msg_points: doc.msg_points || 0, msg_count: doc.msg_count || 0, voice_points: doc.voice_points || 0, updated_at: doc.updated_at }
-        : { msg_points: 0, msg_count: 0, voice_points: 0, updated_at: null };
+        ? {
+            msg_points: doc.msg_points || 0,
+            msg_count: doc.msg_count || 0,
+            voice_points: doc.voice_points || 0,
+            voice_minutes: doc.voice_minutes || 0,
+            week_msg_count: doc.week_msg_count || 0,
+            week_voice_points: doc.week_voice_points || 0,
+            week_voice_minutes: doc.week_voice_minutes || 0,
+            updated_at: doc.updated_at
+        }
+        : {
+            msg_points: 0,
+            msg_count: 0,
+            voice_points: 0,
+            voice_minutes: 0,
+            week_msg_count: 0,
+            week_voice_points: 0,
+            week_voice_minutes: 0,
+            updated_at: null
+        };
 }
 
 module.exports = {

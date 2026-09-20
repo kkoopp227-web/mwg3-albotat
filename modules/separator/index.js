@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const db = require('./database');
+const { createLevelCard } = require('./levelCard');
 
 const IMAGES_DIR = path.join(__dirname, 'images');
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'];
@@ -1260,6 +1261,30 @@ client.on('messageCreate', async message => {
     if (message.author.bot) return;
     if (!isAllowedGuild(message.guild && message.guild.id)) return;
 
+    // Level system - count every non-bot message
+    db.bumpLevelMessage(message.guild.id, message.author.id).catch(() => {});
+
+    // Level profile command
+    const lvTrim = message.content.trim().toLowerCase();
+    if (lvTrim === 'id' || lvTrim === 'ii') {
+        try {
+            const stats = await db.getLevelStats(message.guild.id, message.author.id);
+            const displayName = (message.member && message.member.displayName) || message.author.username;
+            const buf = await createLevelCard({
+                avatarURL: message.author.displayAvatarURL({ extension: 'png', size: 512 }),
+                username: message.author.username,
+                displayName,
+                guildName: message.guild.name,
+                msgPoints: stats.msg_points || 0,
+                voicePoints: stats.voice_points || 0,
+            });
+            return message.reply({ files: [{ attachment: buf, name: 'level-card.png' }] });
+        } catch (error) {
+            console.error('Level card error:', error);
+            return message.reply('حدث خطأ أثناء توليد بطاقة المستوى، حاول مرة أخرى.');
+        }
+    }
+
     if (message.content.trimStart().startsWith(PREFIX)) {
         const content = message.content.slice(PREFIX.length).trim();
         const args = content.split(/\s+/).filter(a => a !== '');
@@ -1446,5 +1471,16 @@ client.on('messageCreate', async message => {
         console.error('Error handling separator', error);
     }
 });
+
+// Level system - +1 voice point per minute connected (non-bot users)
+setInterval(() => {
+    for (const guild of client.guilds.cache.values()) {
+        for (const vs of guild.voiceStates.cache.values()) {
+            if (vs.channelId && vs.member && !vs.member.user.bot) {
+                db.bumpLevelVoice(guild.id, vs.member.id, 1).catch(() => {});
+            }
+        }
+    }
+}, 60000);
 
 client.login(process.env.DISCORD_TOKEN);

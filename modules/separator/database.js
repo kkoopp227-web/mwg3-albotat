@@ -32,6 +32,16 @@ const Separator = mongoose.model('Separator', SeparatorSchema);
 const Reaction = mongoose.model('Reaction', ReactionSchema);
 const AutoDelete = mongoose.model('AutoDelete', AutoDeleteSchema);
 
+const LevelSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    guild_id: String,
+    user_id: String,
+    msg_points: { type: Number, default: 0 },
+    voice_points: { type: Number, default: 0 },
+    updated_at: { type: Date, default: Date.now }
+});
+const Level = mongoose.model('Level', LevelSchema);
+
 const GrantPermSchema = new mongoose.Schema({
     key: { type: String, required: true, unique: true, default: 'default' },
     role_ids: [String]
@@ -163,6 +173,36 @@ async function removeRoom(channelId) {
     await Room.deleteOne({ channel_id: channelId });
 }
 
+// Helper functions for Level system
+async function bumpLevelMessage(guildId, userId, amount) {
+    await Level.findOneAndUpdate(
+        { key: `${guildId}:${userId}` },
+        {
+            $inc: { msg_points: amount || 1 },
+            $set: { guild_id: guildId, user_id: userId, updated_at: new Date() }
+        },
+        { upsert: true, new: true }
+    );
+}
+
+async function bumpLevelVoice(guildId, userId, amount) {
+    await Level.findOneAndUpdate(
+        { key: `${guildId}:${userId}` },
+        {
+            $inc: { voice_points: amount || 1 },
+            $set: { guild_id: guildId, user_id: userId, updated_at: new Date() }
+        },
+        { upsert: true, new: true }
+    );
+}
+
+async function getLevelStats(guildId, userId) {
+    const doc = await Level.findOne({ key: `${guildId}:${userId}` });
+    return doc
+        ? { msg_points: doc.msg_points || 0, voice_points: doc.voice_points || 0, updated_at: doc.updated_at }
+        : { msg_points: 0, voice_points: 0, updated_at: null };
+}
+
 module.exports = {
     getSeparator,
     setSeparator,
@@ -182,5 +222,8 @@ module.exports = {
     getRoom,
     getAllRooms,
     setRoom,
-    removeRoom
+    removeRoom,
+    bumpLevelMessage,
+    bumpLevelVoice,
+    getLevelStats
 };

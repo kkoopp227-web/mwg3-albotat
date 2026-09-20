@@ -183,7 +183,7 @@ function drawWeeklyPanel(ctx, y, width, weekMsgCount, weekVoiceMinutes) {
     ctx.fillText(formatVoiceDuration(weekVoiceMinutes), x + 34, y + 136);
 }
 
-async function createLevelCard({ avatarURL, username, displayName, guildName, msgPoints, msgCount, voicePoints, voiceMinutes, weekMsgCount, weekVoiceMinutes }) {
+async function createLevelCard({ avatarURL, username, displayName, guildName, msgPoints, msgCount, voicePoints, voiceMinutes, weekMsgCount, weekVoiceMinutes, topRank }) {
     const width = 700;
     const height = 1240;
     const canvas = createCanvas(width, height);
@@ -232,6 +232,30 @@ async function createLevelCard({ avatarURL, username, displayName, guildName, ms
     const avSize = 150;
     const avX = (width - avSize) / 2;
     const avY = 148;
+
+    // Top rank badge above avatar
+    if (typeof topRank === 'number') {
+        const rankText = '#Top ' + topRank;
+        ctx.font = 'bold 17px Tajawal';
+        const rtw = ctx.measureText(rankText).width;
+        const rw = rtw + 36;
+        const rh = 28;
+        const rx = (width - rw) / 2;
+        const ry = 116;
+        ctx.fillStyle = 'rgba(59,130,246,0.16)';
+        roundRect(ctx, rx, ry, rw, rh, rh / 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(59,130,246,0.6)';
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, rx, ry, rw, rh, rh / 2);
+        ctx.stroke();
+        ctx.fillStyle = C.blueLight;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(rankText, width / 2, ry + rh / 2 + 1);
+        ctx.textBaseline = 'alphabetic';
+    }
+
     ctx.save();
     ctx.beginPath();
     ctx.arc(avX + avSize / 2, avY + avSize / 2, avSize / 2, 0, Math.PI * 2);

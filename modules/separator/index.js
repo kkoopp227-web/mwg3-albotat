@@ -18,6 +18,7 @@ const path = require('path');
 const crypto = require('crypto');
 const db = require('./database');
 const { createLevelCard } = require('./levelCard');
+const { createLeaderboardCard } = require('./leaderboardCard');
 
 const IMAGES_DIR = path.join(__dirname, 'images');
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'];
@@ -84,6 +85,53 @@ const client = new Client({
 });
 
 const PREFIX = process.env.PREFIX || '-';
+
+// Leaderboard navigation buttons row
+function topNavRow(page, totalPages) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('top_goto_' + (page - 1))
+            .setLabel('◀ السابق')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(page <= 1),
+        new ButtonBuilder()
+            .setCustomId('top_info_' + page)
+            .setLabel('صفحة ' + page + ' / ' + totalPages)
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId('top_goto_' + (page + 1))
+            .setLabel('التالي ▶')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(page >= totalPages)
+    );
+}
+
+// Build leaderboard entries with member info
+async function buildTopEntries(guild, page) {
+    const raw = await db.getTopLevels(guild.id, page);
+    return await Promise.all(raw.map(async e => {
+        let mem = null;
+        try {
+            mem = await guild.members.fetch(e.user_id);
+        } catch (_) {}
+        return {
+            ...e,
+            username: mem ? mem.user.username : e.user_id.slice(0, 6),
+            displayName: (mem && mem.displayName) || e.user_id.slice(0, 6),
+            avatarURL: mem ? mem.user.displayAvatarURL({ extension: 'png', size: 128 }) : null,
+        };
+    }));
+}
+
+async function sendTopPage(target, guild, page) {
+    const total = await db.getLevelCount(guild.id);
+    const totalPages = Math.max(1, Math.ceil(total / 10));
+    const p = Math.min(Math.max(1, page), totalPages);
+    const entries = await buildTopEntries(guild, p);
+    const buf = await createLeaderboardCard({ guildName: guild.name, entries, page: p, totalPages });
+    return await target.reply({ files: [{ attachment: buf, name: 'top.png' }], components: [topNavRow(p, totalPages)] });
+}
 
 const COLOR_ROLE_COLORS = [
     0xff6b6b, 0xff8e53, 0xffc857, 0x2ecc71, 0x5eead4,
@@ -847,6 +895,27 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         const state = panels.get(userId);
 
+        // ---------- Leaderboard pagination ----------
+        if (interaction.customId.startsWith('top_goto_')) {
+            const target = parseInt(interaction.customId.split('_')[2], 10);
+            if (isNaN(target)) return;
+            try {
+                const total = await db.getLevelCount(interaction.guild.id);
+                const totalPages = Math.max(1, Math.ceil(total / 10));
+                const page = Math.min(Math.max(1, target), totalPages);
+                const entries = await buildTopEntries(interaction.guild, page);
+                const buf = await createLeaderboardCard({ guildName: interaction.guild.name, entries, page, totalPages });
+                await interaction.update({
+                    files: [{ attachment: buf, name: 'top.png' }],
+                    components: [topNavRow(page, totalPages)]
+                });
+            } catch (error) {
+                console.error('Top page error:', error);
+                await interaction.reply({ content: 'حدث خطأ أثناء تحميل التوب.', ephemeral: true }).catch(() => {});
+            }
+            return;
+        }
+
         // ---------- Room system ----------
         if (interaction.customId === 'room_create') {
             const member = interaction.member;
@@ -1287,6 +1356,24 @@ client.on('messageCreate', async message => {
         } catch (error) {
             console.error('Level card error:', error);
             return message.reply('حدث خطأ أثناء توليد بطاقة المستوى، حاول مرة أخرى.');
+        }
+    }
+
+    // Leaderboard command: #top / #توب (optional page number)
+    const lbToken = message.content.trim();
+    let lbPage = null;
+    if (/^#(top|توب)$/i.test(lbToken)) {
+        lbPage = 1;
+    } else {
+        const lbMatch = lbToken.match(/^#(top|توب)\s+(\d+)/i);
+        if (lbMatch) lbPage = parseInt(lbMatch[2], 10);
+    }
+    if (lbPage !== null) {
+        try {
+            return await sendTopPage(message, message.guild, lbPage);
+        } catch (error) {
+            console.error('Top command error:', error);
+            return message.reply('حدث خطأ أثناء تحميل التوب، حاول مرة أخرى.');
         }
     }
 

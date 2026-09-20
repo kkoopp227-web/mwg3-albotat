@@ -1340,6 +1340,7 @@ client.on('messageCreate', async message => {
         try {
             const stats = await db.getLevelStats(message.guild.id, message.author.id);
             const displayName = (message.member && message.member.displayName) || message.author.username;
+            const topRank = await db.getLevelRank(message.guild.id, message.author.id);
             const buf = await createLevelCard({
                 avatarURL: message.author.displayAvatarURL({ extension: 'png', size: 512 }),
                 username: message.author.username,
@@ -1351,6 +1352,7 @@ client.on('messageCreate', async message => {
                 voiceMinutes: stats.voice_minutes || 0,
                 weekMsgCount: stats.week_msg_count || 0,
                 weekVoiceMinutes: stats.week_voice_minutes || 0,
+                topRank,
             });
             return message.reply({ files: [{ attachment: buf, name: 'level-card.png' }] });
         } catch (error) {

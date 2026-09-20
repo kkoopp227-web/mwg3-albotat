@@ -37,6 +37,7 @@ const LevelSchema = new mongoose.Schema({
     guild_id: String,
     user_id: String,
     msg_points: { type: Number, default: 0 },
+    msg_count: { type: Number, default: 0 },
     voice_points: { type: Number, default: 0 },
     updated_at: { type: Date, default: Date.now }
 });
@@ -178,7 +179,7 @@ async function bumpLevelMessage(guildId, userId, amount) {
     await Level.findOneAndUpdate(
         { key: `${guildId}:${userId}` },
         {
-            $inc: { msg_points: amount || 1 },
+            $inc: { msg_points: amount || 1, msg_count: 1 },
             $set: { guild_id: guildId, user_id: userId, updated_at: new Date() }
         },
         { upsert: true, new: true }
@@ -199,8 +200,8 @@ async function bumpLevelVoice(guildId, userId, amount) {
 async function getLevelStats(guildId, userId) {
     const doc = await Level.findOne({ key: `${guildId}:${userId}` });
     return doc
-        ? { msg_points: doc.msg_points || 0, voice_points: doc.voice_points || 0, updated_at: doc.updated_at }
-        : { msg_points: 0, voice_points: 0, updated_at: null };
+        ? { msg_points: doc.msg_points || 0, msg_count: doc.msg_count || 0, voice_points: doc.voice_points || 0, updated_at: doc.updated_at }
+        : { msg_points: 0, msg_count: 0, voice_points: 0, updated_at: null };
 }
 
 module.exports = {

@@ -872,6 +872,9 @@ client.on('interactionCreate', async interaction => {
 
         // --- إدارة العقوبات: تنفيذ العقوبة المختارة من قائمة نوع معين ---
         if (interaction.isStringSelectMenu() && interaction.customId.startsWith('pt_apply_')) {
+            // اعتراف سريع فوري حتى لا تنتهي مهلة الاستجابة (3 ثوانٍ)
+            await interaction.deferUpdate().catch(() => {});
+
             const parts = interaction.customId.split('_');
             const type = parts[2];
             const targetId = parts[3];
@@ -879,23 +882,24 @@ client.on('interactionCreate', async interaction => {
             const list = getPunishTemplates(interaction.guild.id, type);
 
             if (!PT_TYPES[type] || !list[index]) {
-                return await interaction.update({ content: '❌ هذه العقوبة لم تعد موجودة!', components: [] });
+                return await interaction.followUp({ content: '❌ هذه العقوبة لم تعد موجودة!', ephemeral: true });
             }
             if (!hasPanelRole(interaction.member, PT_TYPES[type].category)) {
-                return await interaction.update({ content: '❌ ليس لديك صلاحية لاستخدام عقوبات هذا النوع!', components: [] });
+                return await interaction.followUp({ content: '❌ ليس لديك صلاحية لاستخدام عقوبات هذا النوع!', ephemeral: true });
             }
 
             const target = await interaction.guild.members.fetch(targetId).catch(() => null);
             if (!target) {
-                return await interaction.update({ content: '❌ العضو المستهدف غير موجود في السيرفر!', components: [] });
+                return await interaction.followUp({ content: '❌ العضو المستهدف غير موجود في السيرفر!', components: [] });
             }
 
             try {
                 const result = await applyTemplatePunishment(interaction.guild, interaction.member, target, type, list[index]);
-                await interaction.update({ content: `✅ ${result}`, components: [] });
+                await interaction.followUp({ content: `✅ ${result}`, ephemeral: true });
+                interaction.message?.react('✅').catch(() => {});
             } catch (e) {
                 console.error(e);
-                await interaction.update({ content: `❌ ${e.message || 'حدث خطأ أثناء تنفيذ العقوبة!'}`, components: [] });
+                await interaction.followUp({ content: `❌ ${e.message || 'حدث خطأ أثناء تنفيذ العقوبة!'}`, ephemeral: true });
             }
             return;
         }

@@ -878,6 +878,7 @@ client.on('interactionCreate', async interaction => {
             const parts = interaction.customId.split('_');
             const type = parts[2];
             const targetId = parts[3];
+            const origMsgId = parts[4];
             const index = parseInt(interaction.values[0]);
             const list = getPunishTemplates(interaction.guild.id, type);
 
@@ -890,13 +891,20 @@ client.on('interactionCreate', async interaction => {
 
             const target = await interaction.guild.members.fetch(targetId).catch(() => null);
             if (!target) {
-                return await interaction.followUp({ content: '❌ العضو المستهدف غير موجود في السيرفر!', components: [] });
+                return await interaction.followUp({ content: '❌ العضو المستهدف غير موجود في السيرفر!', ephemeral: true });
             }
 
             try {
                 const result = await applyTemplatePunishment(interaction.guild, interaction.member, target, type, list[index]);
                 await interaction.followUp({ content: `✅ ${result}`, ephemeral: true });
-                interaction.message?.react('✅').catch(() => {});
+                // حذف قائمة العقوبات بعد التنفيذ
+                interaction.message?.delete().catch(() => {});
+                // رياكشن صح على الرسالة الأصلية اللي كُتبت منها العقوبة
+                if (origMsgId) {
+                    interaction.channel?.messages.fetch(origMsgId)
+                        .then(origMsg => origMsg.react('✅').catch(() => {}))
+                        .catch(() => {});
+                }
             } catch (e) {
                 console.error(e);
                 await interaction.followUp({ content: `❌ ${e.message || 'حدث خطأ أثناء تنفيذ العقوبة!'}`, ephemeral: true });
@@ -1775,7 +1783,7 @@ client.on('messageCreate', async message => {
             if (target.id === message.author.id) return message.reply('لا يمكنك تطبيق العقوبة على نفسك!');
             const menuRow = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
-                    .setCustomId(`pt_apply_${matchedType}_${target.id}`)
+                    .setCustomId(`pt_apply_${matchedType}_${target.id}_${message.id}`)
                     .setPlaceholder(`اختر عقوبة ${PT_TYPES[matchedType].label} لـ ${target.user.username}...`)
                     .addOptions(templates.map((tpl, i) => ({
                         label: tpl.name,

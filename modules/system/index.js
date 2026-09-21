@@ -123,63 +123,75 @@ function saveJailedRoles() {
     fs.writeFileSync(jailedRolesPath, JSON.stringify(jailedRoles, null, 2));
 }
 
-// ===== خيار نظامه: نظام العقوبات المخصص =====
-const customSysPath = path.join(__dirname, 'custom_system.json');
-let customSys = {};
+// ===== إدارة العقوبات المخصصة (لكل نوع) =====
+const punishTemplatesPath = path.join(__dirname, 'punishment_templates.json');
+let punishTemplates = {};
 try {
-    customSys = JSON.parse(fs.readFileSync(customSysPath, 'utf8'));
-} catch (e) { customSys = {}; }
+    punishTemplates = JSON.parse(fs.readFileSync(punishTemplatesPath, 'utf8'));
+} catch (e) { punishTemplates = {}; }
 
-function saveCustomSys() {
-    fs.writeFileSync(customSysPath, JSON.stringify(customSys, null, 2));
+function savePunishTemplates() {
+    fs.writeFileSync(punishTemplatesPath, JSON.stringify(punishTemplates, null, 2));
 }
 
-// خيارات النظام المسموح بها (بدون التحذير)
-const CS_OPTIONS = {
-    jail: { label: '⛓️ السجن', category: 'jail', perm: PermissionsBitField.Flags.ManageRoles },
-    kick: { label: '👞 الطرد', category: 'kick', perm: PermissionsBitField.Flags.KickMembers },
-    ban: { label: '🚫 الباند', category: 'ban', perm: PermissionsBitField.Flags.BanMembers },
-    mute: { label: '🎙️ الميوت الصوتي', category: 'timeout', perm: PermissionsBitField.Flags.MuteMembers }
+function getPunishTemplates(guildId, type) {
+    return (punishTemplates[guildId] && punishTemplates[guildId][type]) || [];
+}
+
+// أنواع العقوبات: كل نوع له كلمة تعرض قائمة عقوباته فقط
+const PT_TYPES = {
+    jail:    { label: '⛓️ السجن',  words: ['سجن'],             category: 'jail' },
+    mute:    { label: '🎙️ الميوت', words: ['ميوت'],            category: 'timeout' },
+    timeout: { label: '🔇 الإسكات', words: ['اسكات', 'اسكت'],   category: 'timeout' },
+    ban:     { label: '🚫 الباند',  words: ['بان', 'باند'],      category: 'ban' }
 };
-const CS_ALL_OPTIONS = ['jail', 'kick', 'ban', 'mute'];
 
-function getCustomSys(guildId) {
-    return customSys[guildId] || { word: 'سجن', options: CS_ALL_OPTIONS.slice() };
+const PT_UNITS = {
+    min:  { label: '⏱️ دقيقة', ms: 60 * 1000 },
+    hour: { label: '🕐 ساعة',   ms: 60 * 60 * 1000 },
+    day:  { label: '📅 يوم',    ms: 24 * 60 * 60 * 1000 }
+};
+
+function ptDurationText(t) {
+    return `${t.amount} ${PT_UNITS[t.unit].label}`;
 }
 
-function csPanelEmbed(guildId) {
-    const cfg = getCustomSys(guildId);
-    const optsList = cfg.options.map(o => CS_OPTIONS[o] ? CS_OPTIONS[o].label : o).join('، ') || 'لا توجد خيارات';
+function ptPanelEmbed(guildId) {
+    let desc = 'أضف عقوبات لكل نوع (اسم + مدة)، وعند كتابة كلمة النوع + منشن العضو تظهر عقوبات ذلك النوع فقط.\n';
+    for (const [type, info] of Object.entries(PT_TYPES)) {
+        const list = getPunishTemplates(guildId, type);
+        desc += `\n**${info.label}** — الكلمة \`${info.words[0]}\`: `;
+        desc += list.length > 0
+            ? list.map((t, i) => `\`${i + 1}\` ${t.name} (${ptDurationText(t)})`).join('، ')
+            : 'لا توجد عقوبات';
+        desc += '\n';
+    }
     return new EmbedBuilder()
-        .setTitle('⚙️ نظام العقوبات المخصص (خيار نظامه)')
-        .setDescription(
-            `**الكلمة:** \`${cfg.word.toLowerCase()}\`\n` +
-            `**الخيارات المفعّلة:** ${optsList}\n\n` +
-            `عند كتابة **${cfg.word.toLowerCase()} + منشن العضو** في أي شات، يعرض البوت قائمة العقوبات، ومن يختار خياراً تُطبَّق العقوبة فوراً.\n` +
-            `فقط الأعضاء الذين لديهم رتب الصلاحيات (المحددة في لوحة الصلاحيات) لكل نوع عقوبة يستطيعون اختياره.\n` +
-            `⚠️ **التحذير غير مدرج** في خيارات النظام.`
-        )
-        .setColor(0x9b59b6)
+        .setTitle('⚙️ إدارة العقوبات المخصصة')
+        .setDescription(desc)
+        .setColor(0x5865f2)
         .setTimestamp();
 }
 
-function csPanelRow() {
+function ptPanelRow() {
     return new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('cs_change_word').setLabel('تغيير الكلمة').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('cs_set_options').setLabel('تعديل الخيارات').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('pt_add').setLabel('➕ إضافة عقوبة').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('pt_del').setLabel('🗑️ حذف عقوبة').setStyle(ButtonStyle.Danger)
     );
 }
 
-async function applyCustomPunishment(guild, executorMember, target, option, dur) {
+async function applyTemplatePunishment(guild, executorMember, target, type, template) {
     const executorId = executorMember.id;
     if (target.id === executorId) throw new Error('لا يمكنك تطبيق العقوبة على نفسك!');
     if (target.id === guild.ownerId) throw new Error('لا يمكنك تطبيق عقوبة على مالك السيرفر!');
     if (target.roles.highest.position >= executorMember.roles.highest.position && executorId !== guild.ownerId) {
         throw new Error('لا يمكنك تطبيق عقوبة على عضو برتبة أعلى منك أو مساوية لك!');
     }
-    const reason = 'عبر نظام العقوبات المخصص';
+    const reason = `عقوبة: ${template.name}`;
+    const durationMs = Number(template.amount) * (PT_UNITS[template.unit] ? PT_UNITS[template.unit].ms : 0);
+    const durText = ptDurationText(template);
 
-    if (option === 'jail') {
+    if (type === 'jail') {
         const config = jailChannels[guild.id] || {};
         let jailRole = config.roleId ? guild.roles.cache.get(config.roleId) : guild.roles.cache.find(r => r.name.toLowerCase() === 'jail' || r.name === 'سجن' || r.name === 'Sجن');
         if (!jailRole) jailRole = await guild.roles.create({ name: 'Sجن', color: 0x34495e });
@@ -190,56 +202,56 @@ async function applyCustomPunishment(guild, executorMember, target, option, dur)
         await target.timeout(null).catch(() => {});
         await applyJail(target);
         addStat(target.id, 'jail', executorMember.user.tag);
-        punishmentExecutors[target.id] = {
-            executorId,
-            type: 'jail',
-            expiresAt: dur ? Date.now() + (dur * 24 * 60 * 60000) : null
-        };
+        punishmentExecutors[target.id] = { executorId, type: 'jail', expiresAt: Date.now() + durationMs };
         savePunishments();
-        sendLog(guild, 'jail', createLogEmbed('⛓️ سجل سجن (نظام)', target, executorMember.user.tag, reason, dur ? `${dur} يوم` : null));
-        return `⚖️ تم سجن ${target}` + (dur ? `\n**المدة:** ${dur} يوم` : '');
+        sendLog(guild, 'jail', createLogEmbed('⛓️ سجل سجن (عقوبة مخصصة)', target, executorMember.user.tag, reason, durText));
+        return `⚖️ تم سجن ${target}\n**العقوبة:** ${template.name} — ${durText}`;
     }
 
-    if (option === 'kick') {
-        if (!target.kickable) throw new Error('لا يمكنني طرد هذا العضو!');
-        await target.kick(reason);
-        sendLog(guild, 'kick', createLogEmbed('👞 سجل طرد (نظام)', target, executorMember.user.tag, reason));
-        return `👞 تم طرد ${target}`;
-    }
-
-    if (option === 'ban') {
-        if (!target.bannable) throw new Error('لا يمكنني حظر هذا العضو!');
-        await guild.bans.create(target.id, { reason, deleteMessageSeconds: 7 * 24 * 60 * 60 });
-        sendLog(guild, 'ban', createLogEmbed('🚫 سجل حظر (نظام)', target, executorMember.user.tag, reason));
-        return `🚫 تم حظر ${target}`;
-    }
-
-    if (option === 'mute') {
-        if (!target.voice.channel) throw new Error('العضو يجب أن يكون في روم صوتي!');
+    if (type === 'mute') {
         const freshMember = await guild.members.fetch(target.id);
         if (!freshMember.voice.channel) throw new Error('العضو يجب أن يكون في روم صوتي!');
         if (freshMember.voice.serverMute) throw new Error('هذا العضو عنده ميوت صوتي بالفعل!');
         await freshMember.voice.setMute(true);
         addStat(target.id, 'mute', executorMember.user.tag);
-        if (dur) {
-            setTimeout(async () => {
-                try {
-                    const m = await guild.members.fetch(target.id);
-                    if (m && m.voice.channel) await m.voice.setMute(false).catch(() => {});
-                } catch (e) {}
-            }, dur * 60000);
-        }
-        punishmentExecutors[target.id] = {
-            executorId,
-            type: 'mute',
-            expiresAt: dur ? Date.now() + (dur * 60000) : null
-        };
+        setTimeout(async () => {
+            try {
+                const m = await guild.members.fetch(target.id);
+                if (m && m.voice.channel) await m.voice.setMute(false).catch(() => {});
+            } catch (e) {}
+        }, durationMs);
+        punishmentExecutors[target.id] = { executorId, type: 'mute', expiresAt: Date.now() + durationMs };
         savePunishments();
-        sendLog(guild, 'mute', createLogEmbed('🎙️ سجل ميوت صوتي (نظام)', target, executorMember.user.tag, reason, dur ? `${dur} دقيقة` : null));
-        return `🎙️ تم الميوت الصوتي لـ ${target}` + (dur ? `\n**المدة:** ${dur} دقيقة` : '');
+        sendLog(guild, 'mute', createLogEmbed('🎙️ سجل ميوت صوتي (عقوبة مخصصة)', freshMember, executorMember.user.tag, reason, durText));
+        return `🎙️ تم الميوت الصوتي لـ ${freshMember}\n**العقوبة:** ${template.name} — ${durText}`;
     }
 
-    throw new Error('خيار عقوبة غير معروف!');
+    if (type === 'timeout') {
+        let muteRole = guild.roles.cache.find(r => r.name === 'إسكات');
+        if (!muteRole) muteRole = await guild.roles.create({ name: 'إسكات', color: '#818386', reason: 'رتبة الإسكات التلقائية' });
+        const textChannels = guild.channels.cache.filter(c => c.isTextBased());
+        for (const [id, ch] of textChannels) {
+            if (ch.permissionOverwrites) await ch.permissionOverwrites.edit(muteRole, { SendMessages: false }).catch(() => {});
+        }
+        await target.roles.add(muteRole);
+        addStat(target.id, 'timeout', executorMember.user.tag);
+        punishmentExecutors[target.id] = { executorId, type: 'timeout', expiresAt: Date.now() + durationMs };
+        savePunishments();
+        sendLog(guild, 'timeout', createLogEmbed('🔇 سجل إسكات (عقوبة مخصصة)', target, executorMember.user.tag, reason, durText));
+        return `🔇 تم إسكات ${target}\n**العقوبة:** ${template.name} — ${durText}`;
+    }
+
+    if (type === 'ban') {
+        if (!target.bannable) throw new Error('لا يمكنني حظر هذا العضو!');
+        await guild.bans.create(target.id, { reason, deleteMessageSeconds: 7 * 24 * 60 * 60 });
+        setTimeout(async () => {
+            try { await guild.members.unban(target.id).catch(() => {}); } catch (e) {}
+        }, durationMs);
+        sendLog(guild, 'ban', createLogEmbed('🚫 سجل حظر (عقوبة مخصصة)', target, executorMember.user.tag, reason, durText));
+        return `🚫 تم حظر ${target}\n**العقوبة:** ${template.name} — ${durText}`;
+    }
+
+    throw new Error('نوع عقوبة غير معروف!');
 }
 
 // ملف إعدادات السيرفر العامة
@@ -367,7 +379,7 @@ function hasPermission(member, category, discordPerm) {
     return member.roles.cache.some(role => guildRoles.includes(role.id));
 }
 
-// فحص صارم لخيار نظامه: فقط الرتب المضافة في لوحة الصلاحيات (+ مالك السيرفر) — بدون صلاحيات ديسكورد
+// فحص صارم لعقوبات النظام المخصص: فقط الرتب المضافة في لوحة الصلاحيات (+ مالك السيرفر) — بدون صلاحيات ديسكورد
 function hasPanelRole(member, category) {
     if (member.id === member.guild.ownerId) return true;
     const guildRoles = rolePerms[member.guild.id]?.[category] || [];
@@ -530,7 +542,7 @@ client.on('interactionCreate', async interaction => {
                         { label: 'رؤية السجل الأخير (cr)', value: 'history', description: 'إضافة/إزالة رتب يمكنها استخدام أمر cr' },
                         { label: 'أوامر الأسماء والطلبات', value: 'nickname', description: 'إضافة/إزالة رتب يمكنها تغيير الأسماء والتحكم بالرتب' },
                         { label: 'إدارة وقفل الرومات', value: 'channels', description: 'إضافة/إزالة رتب يمكنها قفل وفتح الرومات' },
-                        { label: 'خيار نظامه (قائمة العقوبات)', value: 'custom_system', description: 'تحديد كلمة النظام وخيارات السجن/طرد/باند/ميوت' },
+                        { label: 'إدارة العقوبات المخصصة', value: 'punish_templates', description: 'إضافة/حذف عقوبات لكل نوع (سجن/ميوت/اسكات/بان) بأسماء ومُدد' },
                         { label: 'عرض معلومات الصلاحيات', value: 'show_info', description: 'عرض الرتب المضافة لكل فئة' },
                     ])
             );
@@ -574,8 +586,8 @@ client.on('interactionCreate', async interaction => {
                 return await interaction.update({ embeds: [embed], components: [], content: null });
             }
 
-            if (category === 'custom_system') {
-                return await interaction.update({ embeds: [csPanelEmbed(interaction.guild.id)], components: [csPanelRow()] });
+            if (category === 'punish_templates') {
+                return await interaction.update({ embeds: [ptPanelEmbed(interaction.guild.id)], components: [ptPanelRow()] });
             }
 
             const row = new ActionRowBuilder().addComponents(
@@ -627,80 +639,148 @@ client.on('interactionCreate', async interaction => {
             return await interaction.update({ content: `✅ تم **${isAdd ? 'إضافة' : 'إزالة'}** الرتب (${roleIds.length}) بنجاح لصلاحية **${category}**!`, components: [] });
         }
 
-        // --- خيار نظامه: تكوين النظام (كلمة + خيارات) ---
-        if (interaction.isButton() && interaction.customId === 'cs_change_word') {
+        // --- إدارة العقوبات المخصصة: تكوين (نوع -> وحدة -> مودال اسم+مدة) ---
+        if (interaction.isButton() && interaction.customId === 'pt_add') {
             if (!isStaff) return interaction.reply({ content: 'ليس لديك صلاحية للإعداد!', ephemeral: true });
-            const cfg = getCustomSys(interaction.guild.id);
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('pt_new_type')
+                    .setPlaceholder('١) اختر نوع العقوبة...')
+                    .addOptions(Object.entries(PT_TYPES).map(([type, info]) => ({
+                        label: info.label,
+                        value: type,
+                        description: `إضافة عقوبة جديدة لنوع ${info.label}`
+                    })))
+            );
+            return await interaction.update({ content: '📍 **إضافة عقوبة** — اختر النوع أولاً:', embeds: [], components: [row] });
+        }
+
+        if (interaction.isStringSelectMenu() && interaction.customId === 'pt_new_type') {
+            if (!isStaff) return interaction.reply({ content: 'ليس لديك صلاحية للإعداد!', ephemeral: true });
+            const type = interaction.values[0];
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId(`pt_new_unit_${type}`)
+                    .setPlaceholder('٢) اختر وحدة المدة...')
+                    .addOptions(Object.entries(PT_UNITS).map(([unit, info]) => ({
+                        label: `بـ ${info.label}`,
+                        value: unit
+                    })))
+            );
+            return await interaction.update({ content: `📍 **إضافة عقوبة** — النوع: **${PT_TYPES[type].label}**\nاختر وحدة المدة (دقيقة / ساعة / يوم):`, components: [row] });
+        }
+
+        if (interaction.isStringSelectMenu() && interaction.customId.startsWith('pt_new_unit_')) {
+            if (!isStaff) return interaction.reply({ content: 'ليس لديك صلاحية للإعداد!', ephemeral: true });
+            const type = interaction.customId.replace('pt_new_unit_', '');
+            const unit = interaction.values[0];
             const modal = new ModalBuilder()
-                .setCustomId('cs_word_modal')
-                .setTitle('تغيير كلمة النظام');
-            const wordInput = new TextInputBuilder()
-                .setCustomId('cs_word_input')
-                .setLabel('اكتب كلمة النظام التي تفتح القائمة')
-                .setPlaceholder('مثال: سجن')
-                .setValue(cfg.word)
+                .setCustomId(`pt_new_modal_${type}_${unit}`)
+                .setTitle(`إضافة عقوبة — ${PT_TYPES[type].label}`);
+            const nameInput = new TextInputBuilder()
+                .setCustomId('pt_n_name')
+                .setLabel('اسم العقوبة')
+                .setPlaceholder('مثال: سجن 3 أيام')
                 .setStyle(TextInputStyle.Short)
-                .setMaxLength(20)
+                .setMaxLength(50)
                 .setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(wordInput));
+            const amountInput = new TextInputBuilder()
+                .setCustomId('pt_n_amount')
+                .setLabel(`المدة (رقم) — ${PT_UNITS[unit].label}`)
+                .setPlaceholder('مثال: 3')
+                .setStyle(TextInputStyle.Short)
+                .setMaxLength(5)
+                .setRequired(true);
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(nameInput),
+                new ActionRowBuilder().addComponents(amountInput)
+            );
             return await interaction.showModal(modal);
         }
 
-        if (interaction.isModalSubmit() && interaction.customId === 'cs_word_modal') {
+        if (interaction.isModalSubmit() && interaction.customId.startsWith('pt_new_modal_')) {
             if (!isStaff) return interaction.reply({ content: 'ليس لديك صلاحية للإعداد!', ephemeral: true });
-            const word = (interaction.fields.getTextInputValue('cs_word_input') || 'سجن').trim().slice(0, 20);
-            if (!customSys[interaction.guild.id]) customSys[interaction.guild.id] = getCustomSys(interaction.guild.id);
-            customSys[interaction.guild.id].word = word || 'سجن';
-            saveCustomSys();
-            await sendSlashLog(interaction.guild, '⚙️ تغيير كلمة النظام', interaction.user.tag, `الكلمة الجديدة: **${word}**`);
-            return await interaction.reply({ embeds: [csPanelEmbed(interaction.guild.id)], components: [csPanelRow()], ephemeral: false });
+            const parts = interaction.customId.replace('pt_new_modal_', '').split('_');
+            const type = parts[0];
+            const unit = parts[1];
+            const name = (interaction.fields.getTextInputValue('pt_n_name') || 'عقوبة').trim().slice(0, 50);
+            const amount = parseInt(interaction.fields.getTextInputValue('pt_n_amount')) || 0;
+            if (!PT_TYPES[type] || !PT_UNITS[unit] || amount <= 0) {
+                return await interaction.reply({ content: '❌ البيانات غير صحيحة! المدة يجب أن تكون رقماً أكبر من صفر.', ephemeral: true });
+            }
+            if (!punishTemplates[interaction.guild.id]) punishTemplates[interaction.guild.id] = {};
+            if (!punishTemplates[interaction.guild.id][type]) punishTemplates[interaction.guild.id][type] = [];
+            if (punishTemplates[interaction.guild.id][type].length >= 25) {
+                return await interaction.reply({ content: '❌ وصلت للحد الأقصى (25 عقوبة) لهذا النوع!', ephemeral: true });
+            }
+            punishTemplates[interaction.guild.id][type].push({ name, amount, unit, createdAt: Date.now() });
+            savePunishTemplates();
+            await sendSlashLog(interaction.guild, '➕ إضافة عقوبة', interaction.user.tag, `**${PT_TYPES[type].label}:** ${name} — ${ptDurationText({ name, amount, unit })}`);
+            return await interaction.reply({ embeds: [ptPanelEmbed(interaction.guild.id)], components: [ptPanelRow()] });
         }
 
-        if (interaction.isButton() && interaction.customId === 'cs_set_options') {
+        // --- إدارة العقوبات المخصصة: حذف عقوبة ---
+        if (interaction.isButton() && interaction.customId === 'pt_del') {
             if (!isStaff) return interaction.reply({ content: 'ليس لديك صلاحية للإعداد!', ephemeral: true });
-            const cfg = getCustomSys(interaction.guild.id);
             const row = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
-                    .setCustomId('cs_options_sel')
-                    .setPlaceholder('اختر خيارات العقوبة التي تظهر في القائمة...')
-                    .setMinValues(1)
-                    .setMaxValues(CS_ALL_OPTIONS.length)
-                    .addOptions(CS_ALL_OPTIONS.map(o => ({
-                        label: CS_OPTIONS[o].label,
-                        value: o,
-                        description: 'يُطبق على العضو المحدد عند اختياره',
-                        default: cfg.options.includes(o)
+                    .setCustomId('pt_del_type')
+                    .setPlaceholder('اختر نوع العقوبة لحذف إحداها...')
+                    .addOptions(Object.entries(PT_TYPES).map(([type, info]) => ({
+                        label: info.label,
+                        value: type
                     })))
             );
-            return await interaction.update({ content: '📍 اختر العقوبات التي ستعرضها قائمة النظام (التحذير غير متاح):', embeds: [], components: [row] });
+            return await interaction.update({ content: '📍 **حذف عقوبة** — اختر النوع:', embeds: [], components: [row] });
         }
 
-        if (interaction.isStringSelectMenu() && interaction.customId === 'cs_options_sel') {
+        if (interaction.isStringSelectMenu() && interaction.customId === 'pt_del_type') {
             if (!isStaff) return interaction.reply({ content: 'ليس لديك صلاحية للإعداد!', ephemeral: true });
-            if (!customSys[interaction.guild.id]) customSys[interaction.guild.id] = getCustomSys(interaction.guild.id);
-            customSys[interaction.guild.id].options = interaction.values.filter(o => CS_ALL_OPTIONS.includes(o));
-            saveCustomSys();
-            await sendSlashLog(interaction.guild, '⚙️ تعديل خيارات النظام', interaction.user.tag, `الخيارات: ${customSys[interaction.guild.id].options.map(o => CS_OPTIONS[o].label).join('، ')}`);
-            return await interaction.update({ embeds: [csPanelEmbed(interaction.guild.id)], components: [csPanelRow()], content: null });
+            const type = interaction.values[0];
+            const list = getPunishTemplates(interaction.guild.id, type);
+            if (list.length === 0) {
+                return await interaction.update({ content: `ℹ️ لا توجد عقوبات محفوظة لنوع **${PT_TYPES[type].label}**!`, embeds: [], components: [] });
+            }
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId(`pt_del_pick_${type}`)
+                    .setPlaceholder('اختر العقوبة للحذف...')
+                    .addOptions(list.map((t, i) => ({
+                        label: t.name,
+                        value: String(i),
+                        description: ptDurationText(t)
+                    })))
+            );
+            return await interaction.update({ content: `📍 **حذف عقوبة** — اختر واحدة من **${PT_TYPES[type].label}**:`, embeds: [], components: [row] });
         }
 
-        // --- خيار نظامه: تنفيذ العقوبة المختارة من القائمة ---
-        if (interaction.isStringSelectMenu() && interaction.customId.startsWith('cs_punish_')) {
+        if (interaction.isStringSelectMenu() && interaction.customId.startsWith('pt_del_pick_')) {
+            if (!isStaff) return interaction.reply({ content: 'ليس لديك صلاحية للإعداد!', ephemeral: true });
+            const type = interaction.customId.replace('pt_del_pick_', '');
+            const index = parseInt(interaction.values[0]);
+            const list = getPunishTemplates(interaction.guild.id, type);
+            if (!list[index]) {
+                return await interaction.update({ content: '❌ العقوبة غير موجودة!', components: [] });
+            }
+            const removed = list.splice(index, 1)[0];
+            savePunishTemplates();
+            await sendSlashLog(interaction.guild, '🗑️ حذف عقوبة', interaction.user.tag, `**${PT_TYPES[type].label}:** ${removed.name} — ${ptDurationText(removed)}`);
+            return await interaction.update({ embeds: [ptPanelEmbed(interaction.guild.id)], components: [ptPanelRow()] });
+        }
+
+        // --- إدارة العقوبات: تنفيذ العقوبة المختارة من قائمة نوع معين ---
+        if (interaction.isStringSelectMenu() && interaction.customId.startsWith('pt_apply_')) {
             const parts = interaction.customId.split('_');
-            const targetId = parts[2];
-            const dur = parseInt(parts[3]) || 0;
-            const option = interaction.values[0];
+            const type = parts[2];
+            const targetId = parts[3];
+            const index = parseInt(interaction.values[0]);
+            const list = getPunishTemplates(interaction.guild.id, type);
 
-            if (!CS_OPTIONS[option]) {
-                return await interaction.update({ content: '❌ خيار غير معروف!', components: [] });
+            if (!PT_TYPES[type] || !list[index]) {
+                return await interaction.update({ content: '❌ هذه العقوبة لم تعد موجودة!', components: [] });
             }
-            if (!hasPanelRole(interaction.member, CS_OPTIONS[option].category)) {
-                return await interaction.update({ content: '❌ ليس لديك صلاحية لاستخدام هذا النوع من العقوبات!', components: [] });
-            }
-
-            const cfg = getCustomSys(interaction.guild.id);
-            if (!cfg.options.includes(option)) {
-                return await interaction.update({ content: '❌ هذا الخيار لم يعد متاحاً في النظام!', components: [] });
+            if (!hasPanelRole(interaction.member, PT_TYPES[type].category)) {
+                return await interaction.update({ content: '❌ ليس لديك صلاحية لاستخدام عقوبات هذا النوع!', components: [] });
             }
 
             const target = await interaction.guild.members.fetch(targetId).catch(() => null);
@@ -709,7 +789,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             try {
-                const result = await applyCustomPunishment(interaction.guild, interaction.member, target, option, dur);
+                const result = await applyTemplatePunishment(interaction.guild, interaction.member, target, type, list[index]);
                 await interaction.update({ content: `✅ ${result}`, components: [] });
             } catch (e) {
                 console.error(e);
@@ -1576,27 +1656,28 @@ client.on('messageCreate', async message => {
     };
 
     try {
-        // === خيار نظامه: نظام العقوبات المخصص ===
-        const customCfg = getCustomSys(guild.id);
-        if (customCfg.word && commandName === customCfg.word.toLowerCase()) {
-            const allowed = customCfg.options.filter(o => CS_OPTIONS[o] && hasPanelRole(member, CS_OPTIONS[o].category));
-            if (allowed.length === 0) return;
+        // === إدارة العقوبات المخصصة: كل نوع له كلمة تفتح قائمة عقوباته ===
+        const matchedType = Object.keys(PT_TYPES).find(t =>
+            PT_TYPES[t].words.some(w => commandName === w) && (punishTemplates[guild.id] && punishTemplates[guild.id][t] && punishTemplates[guild.id][t].length > 0)
+        );
+        if (matchedType) {
+            // بمجرد وجود قوالب لهذا النوع، تُحتكر الكلمة ويبقى الوصول لمن عليه رتبة الصلاحية فقط
+            if (!hasPanelRole(member, PT_TYPES[matchedType].category)) return;
+            const templates = getPunishTemplates(guild.id, matchedType);
             const target = message.mentions.members.first() || (args[0] ? await guild.members.fetch(args[0]).catch(() => null) : null);
-            if (!target) return message.reply(`يرجى منشن العضو المستهدف! (مثال: \`${customCfg.word} @فلان\`)`);
+            if (!target) return message.reply(`يرجى منشن العضو المستهدف! (مثال: \`${PT_TYPES[matchedType].words[0]} @فلان\`)`);
             if (target.id === message.author.id) return message.reply('لا يمكنك تطبيق العقوبة على نفسك!');
-            const durationArg = args.find(a => !isNaN(parseInt(a)) && a.length < 10);
-            const dur = durationArg ? parseInt(durationArg) : 0;
             const menuRow = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
-                    .setCustomId(`cs_punish_${target.id}_${dur}`)
-                    .setPlaceholder('اختر نوع العقوبة...')
-                    .addOptions(allowed.map(o => ({
-                        label: CS_OPTIONS[o].label,
-                        value: o,
-                        description: `يُطبق على ${target.user.username}`
+                    .setCustomId(`pt_apply_${matchedType}_${target.id}`)
+                    .setPlaceholder(`اختر عقوبة ${PT_TYPES[matchedType].label} لـ ${target.user.username}...`)
+                    .addOptions(templates.map((tpl, i) => ({
+                        label: tpl.name,
+                        value: String(i),
+                        description: `المدة: ${ptDurationText(tpl)}`
                     })))
             );
-            return message.reply({ content: `⚙️ **${customCfg.word}** — اختر العقوبة المناسبة لـ ${target}:`, components: [menuRow] });
+            return message.reply({ content: `⚙️ **${PT_TYPES[matchedType].label}** — اختر العقوبة لـ ${target}:`, components: [menuRow] });
         }
 
         if (message.content === 'خواص') {
@@ -1666,7 +1747,7 @@ client.on('messageCreate', async message => {
                         { label: 'رؤية الإحصائيات (cc)', value: 'stats', description: 'إضافة/إزالة رتب يمكنها استخدام أمر cc' },
                         { label: 'رؤية السجل الأخير (cr)', value: 'history', description: 'إضافة/إزالة رتب يمكنها استخدام أمر cr' },
                         { label: 'أوامر الأسماء', value: 'nickname', description: 'إضافة/إزالة رتب يمكنها تغيير الأسماء' },
-                        { label: 'خيار نظامه (قائمة العقوبات)', value: 'custom_system', description: 'تحديد كلمة النظام وخيارات السجن/طرد/باند/ميوت' },
+                        { label: 'إدارة العقوبات المخصصة', value: 'punish_templates', description: 'إضافة/حذف عقوبات لكل نوع (سجن/ميوت/اسكات/بان) بأسماء ومُدد' },
                         { label: 'عرض معلومات الصلاحيات', value: 'show_info', description: 'عرض الرتب المضافة لكل فئة' },
                     ])
             );

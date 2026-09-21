@@ -210,20 +210,27 @@ async function applyTemplatePunishment(guild, executorMember, target, type, temp
 
     if (type === 'mute') {
         const freshMember = await guild.members.fetch(target.id);
-        if (!freshMember.voice.channel) throw new Error('العضو يجب أن يكون في روم صوتي!');
-        if (freshMember.voice.serverMute) throw new Error('هذا العضو عنده ميوت صوتي بالفعل!');
-        await freshMember.voice.setMute(true);
-        addStat(target.id, 'mute', executorMember.user.tag);
-        setTimeout(async () => {
-            try {
-                const m = await guild.members.fetch(target.id);
-                if (m && m.voice.channel) await m.voice.setMute(false).catch(() => {});
-            } catch (e) {}
-        }, durationMs);
+        const inVoice = !!freshMember.voice.channel;
+        if (inVoice && freshMember.voice.serverMute) throw new Error('هذا العضو عنده ميوت صوتي بالفعل!');
         punishmentExecutors[target.id] = { executorId, type: 'mute', expiresAt: Date.now() + durationMs };
         savePunishments();
+        addStat(target.id, 'mute', executorMember.user.tag);
+        let resultMsg;
+        if (inVoice) {
+            await freshMember.voice.setMute(true);
+            const remaining = Math.min(durationMs, 2147483000);
+            setTimeout(async () => {
+                try {
+                    const m = await guild.members.fetch(target.id);
+                    if (m && m.voice.channel) await m.voice.setMute(false).catch(() => {});
+                } catch (e) {}
+            }, remaining);
+            resultMsg = `🎙️ تم الميوت الصوتي لـ ${freshMember}\n**العقوبة:** ${template.name} — ${durText}`;
+        } else {
+            resultMsg = `🎙️ تم تسجيل الميوت لـ ${freshMember} (ليس في روم صوتي حالياً)\n**العقوبة:** ${template.name} — ${durText}\nسيتم تطبيقه تلقائياً أول ما يدخل روم صوتي.`;
+        }
         sendLog(guild, 'mute', createLogEmbed('🎙️ سجل ميوت صوتي (عقوبة مخصصة)', freshMember, executorMember.user.tag, reason, durText));
-        return `🎙️ تم الميوت الصوتي لـ ${freshMember}\n**العقوبة:** ${template.name} — ${durText}`;
+        return resultMsg;
     }
 
     if (type === 'timeout') {
@@ -1933,60 +1940,60 @@ client.on('messageCreate', async message => {
             if (target.roles.highest.position >= member.roles.highest.position && message.author.id !== guild.ownerId) {
                 return message.reply('لا يمكنك ميوت عضو برتبة أعلى منك أو مساوية لك!');
             }
-            if (!target.voice.channel) return message.reply('العضو يجب أن يكون في روم صوتي!');
 
-            // ❌ فحص: هل الشخص عنده ميوت صوتي بالفعل؟
-            if (target.voice.serverMute) {
-                const warnMsg = await message.reply(`⚠️ ${target} **عنده ميوت صوتي بالفعل!** لا يمكن إعطاؤه ميوت مرة ثانية.`);
-                setTimeout(() => { warnMsg.delete().catch(() => {}); message.delete().catch(() => {}); }, 4000);
-                return;
-            }
-            
             const durationArg = args.find(a => !isNaN(parseInt(a)) && a.length < 10);
             const duration = durationArg ? parseInt(durationArg) : 15;
-
+            const reason = args.filter(a => isNaN(parseInt(a)) && !a.includes('<@')).join(' ') || 'لا يوجد سبب محدد';
 
             try {
                 const freshMember = await guild.members.fetch(target.id);
                 console.log(`محاولة عمل ميوت لـ ${freshMember.user.tag} في سيرفر ${guild.name}`);
-                
-                if (!freshMember.voice.channel) {
-                    console.log('فشل: العضو ليس في روم صوتي');
-                    return message.reply('❌ العضو يجب أن يكون في روم صوتي!');
+
+                const inVoice = !!freshMember.voice.channel;
+                if (inVoice && freshMember.voice.serverMute) {
+                    const warnMsg = await message.reply(`⚠️ ${target} **عنده ميوت صوتي بالفعل!** لا يمكن إعطاؤه ميوت مرة ثانية.`);
+                    setTimeout(() => { warnMsg.delete().catch(() => {}); message.delete().catch(() => {}); }, 4000);
+                    return;
                 }
-                
-                await freshMember.voice.setMute(true);
-                console.log('نجاح: تم تنفيذ الميوت في ديسكورد');
+
                 addStat(target.id, 'mute', message.author.tag);
-                
-                let response = `تم الميوت الصوتي 🎙️❌ لـ ${target}`;
-                if (duration) {
-                    response += `\n**المدة:** ${duration} دقيقة`;
-                    setTimeout(async () => {
-                        try {
-                            const m = await guild.members.fetch(target.id);
-                            if (m && m.voice.channel) await m.voice.setMute(false).catch(() => {});
-                        } catch (e) {}
-                    }, duration * 60 * 1000);
+
+                punishmentExecutors[target.id] = {
+                    executorId: message.author.id,
+                    type: 'mute',
+                    expiresAt: duration ? Date.now() + (duration * 60000) : null
+                };
+                savePunishments();
+
+                let response;
+                if (inVoice) {
+                    await freshMember.voice.setMute(true);
+                    console.log('نجاح: تم تنفيذ الميوت في ديسكورد');
+                    response = `تم الميوت الصوتي 🎙️❌ لـ ${target}`;
+                    if (duration) {
+                        response += `\n**المدة:** ${duration} دقيقة`;
+                        setTimeout(async () => {
+                            try {
+                                const m = await guild.members.fetch(target.id);
+                                if (m && m.voice.channel) await m.voice.setMute(false).catch(() => {});
+                            } catch (e) {}
+                        }, Math.min(duration * 60 * 1000, 2147483000));
+                    }
+                } else {
+                    console.log('نجاح: تم تسجيل ميوت مؤجل (العضو خارج الروم الصوتي)');
+                    response = `تم تسجيل الميوت الصوتي 🎙️❌ لـ ${target} (**ليس في روم صوتي حالياً**)\nسيُطبَّق تلقائياً أول ما يدخل روم صوتي.`;
+                    if (duration) response += `\n**المدة:** ${duration} دقيقة`;
                 }
                 await message.react('✅').catch(() => {});
 
-                const reason = args.filter(a => isNaN(parseInt(a)) && !a.includes('<@')).join(' ') || 'لا يوجد سبب محدد';
-                const logEmbed = createLogEmbed('🎙️ سجل ميوت صوتي', target, message.author.tag, reason, duration ? `${duration} دقيقة` : null);
+                const logEmbed = createLogEmbed('🎙️ سجل ميوت صوتي', freshMember, message.author.tag, reason, duration ? `${duration} دقيقة` : null);
                 sendLog(guild, 'mute', logEmbed);
-
-                punishmentExecutors[target.id] = { 
-                    executorId: message.author.id, 
-                    type: 'mute',
-                    expiresAt: duration ? Date.now() + (duration * 60000) : null 
-                };
-                savePunishments();
             } catch (e) {
                 console.error(e);
                 if (e.code === 50013) {
                     message.reply('❌ ليس لدي صلاحية لعمل ميوت لهذا الشخص (تأكد من رتبة البوت)!');
                 } else {
-                    message.reply('❌ حدث خطأ! تأكد أن العضو موجود في روم صوتي حالياً.');
+                    message.reply('❌ حدث خطأ أثناء محاولة الميوت.');
                 }
             }
         }
@@ -2669,6 +2676,30 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
 // سجلات الرومات الصوتية
 client.on('voiceStateUpdate', async (oldState, newState) => {
+    // تطبيق الميوت المؤجل (عند دخول روم صوتي واللي عليه ميوت مسجل وهو خارج الروم)
+    if (!oldState.channelId && newState.channelId) {
+        const memberId = newState.member?.id;
+        if (memberId && !newState.member.user.bot) {
+            const pun = punishmentExecutors[memberId];
+            if (pun && pun.type === 'mute' && pun.expiresAt && Date.now() < pun.expiresAt) {
+                try {
+                    const fresh = await newState.member.fetch();
+                    if (fresh && fresh.voice.channel && !fresh.voice.serverMute) {
+                        await fresh.voice.setMute(true);
+                        console.log(`✅ [تلقائي] تم تطبيق الميوت المؤجل على ${fresh.user.tag}`);
+                        const remaining = Math.min(pun.expiresAt - Date.now(), 2147483000);
+                        setTimeout(async () => {
+                            try {
+                                const m = await newState.guild.members.fetch(memberId);
+                                if (m && m.voice.channel) await m.voice.setMute(false).catch(() => {});
+                            } catch (e) {}
+                        }, remaining);
+                    }
+                } catch (e) { console.error('[ERROR] فشل تطبيق الميوت المؤجل:', e); }
+            }
+        }
+    }
+
     const logChannelId = logChannels[newState.guild.id]?.['voice_logs'];
     if (!logChannelId) return;
 

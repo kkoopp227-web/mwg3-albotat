@@ -238,13 +238,16 @@ async function applyTemplatePunishment(guild, executorMember, target, type, temp
     }
 
     if (type === 'timeout') {
-        const appliedMs = Math.min(durationMs, 2419200000); // سقف ديسكورد: 28 يوم
-        await target.timeout(new Date(Date.now() + appliedMs), reason);
+        // اسكات: قفل الكتابة في الشاتات لهذا العضو فقط (بدون رول)
+        const textChannels = guild.channels.cache.filter(c => c.isTextBased());
+        for (const [id, ch] of textChannels) {
+            if (ch.permissionOverwrites) await ch.permissionOverwrites.edit(target.id, { SendMessages: false }).catch(() => {});
+        }
         addStat(target.id, 'timeout', executorMember.user.tag);
-        punishmentExecutors[target.id] = { executorId, type: 'timeout', expiresAt: Date.now() + appliedMs };
+        punishmentExecutors[target.id] = { executorId, type: 'timeout', expiresAt: Date.now() + durationMs };
         savePunishments();
         sendLog(guild, 'timeout', createLogEmbed('🔇 سجل إسكات (عقوبة مخصصة)', target, executorMember.user.tag, reason, durText));
-        return `🔇 تم إسكات ${target} (تايوم أوت رسمي، بدون رول)\n**العقوبة:** ${template.name} — ${durText}`;
+        return `🔇 تم إسكات ${target} — قفلت شاتاته (ما يقدر يكتب)\n**العقوبة:** ${template.name} — ${durText}`;
     }
 
     if (type === 'ban') {
@@ -492,9 +495,12 @@ async function checkPunishments() {
             const member = await guild.members.fetch(targetId).catch(() => null);
 
             if (punishment.type === 'timeout') {
-                // تايم أوت رسمي — ينتهي تلقائياً من ديسكورد، ننظف فقط إن بقي شيء
-                if (member && member.communicationDisabledUntil) {
-                    await member.timeout(null).catch(() => {});
+                // اسكات: فك قفل الكتابة عند انتهاء المدة
+                if (member) {
+                    const textChannels = guild.channels.cache.filter(c => c.isTextBased());
+                    for (const [id, ch] of textChannels) {
+                        if (ch.permissionOverwrites) await ch.permissionOverwrites.delete(member.id).catch(() => {});
+                    }
                 }
                 console.log(`✅ [تلقائي] تم فك إسكات ${member?.user.tag || targetId}`);
             } else if (punishment.type === 'mute') {
@@ -544,7 +550,10 @@ client.on('guildMemberAdd', async (member) => {
         } else if (pun.type === 'timeout') {
             const remaining = pun.expiresAt ? pun.expiresAt - Date.now() : 0;
             if (remaining > 0) {
-                await member.timeout(new Date(Date.now() + Math.min(remaining, 2419200000))).catch(() => {});
+                const textChannels = member.guild.channels.cache.filter(c => c.isTextBased());
+                for (const [id, ch] of textChannels) {
+                    if (ch.permissionOverwrites) await ch.permissionOverwrites.edit(member.id, { SendMessages: false }).catch(() => {});
+                }
                 console.log(`✅ [عودة] أُعيد تطبيق الإسكات على ${member.user.tag}`);
             }
         } else if (pun.type === 'mute') {
@@ -1973,17 +1982,18 @@ client.on('messageCreate', async message => {
                 return message.reply('لا يمكنك إسكات عضو برتبة أعلى منك أو مساوية لك!');
             }
 
-            // تايم أوت رسمي من ديسكورد (بدون رول)
-            if (target.communicationDisabledUntil) {
-                return message.reply(`⚠️ ${target} **عنده إسكات بالفعل!**`);
-            }
-
             const durationArg = args.find(a => !isNaN(parseInt(a)) && a.length < 10);
-            const duration = Math.min(durationArg ? parseInt(durationArg) : 15, 40320); // سقف 28 يوم
+            const duration = durationArg ? parseInt(durationArg) : 15;
             const reason = args.filter(a => isNaN(parseInt(a)) && !a.includes('<@')).join(' ') || 'لا يوجد سبب محدد';
 
             try {
-                await target.timeout(Math.min(duration * 60 * 1000, 2419200000), reason);
+                // اسكات: قفل الكتابة في الشاتات لهذا العضو فقط (بدون رول)
+                const textChannels = guild.channels.cache.filter(c => c.isTextBased());
+                for (const [id, ch] of textChannels) {
+                    if (ch.permissionOverwrites) {
+                        await ch.permissionOverwrites.edit(target.id, { SendMessages: false }).catch(() => {});
+                    }
+                }
                 await message.react('✅').catch(() => {});
                 addStat(target.id, 'timeout', message.author.tag);
 
@@ -1998,7 +2008,7 @@ client.on('messageCreate', async message => {
                 savePunishments();
             } catch (e) {
                 console.error(e);
-                message.reply('❌ حدث خطأ! تأكد من صلاحيات البوت (Moderate Members) وأن رتبة البوت أعلى من رتبة العضو.');
+                message.reply('❌ حدث خطأ! تأكد من صلاحيات البوت (Manage Channels) وأن رتبة البوت أعلى من رتبة العضو.');
             }
         }
 
@@ -2078,12 +2088,16 @@ client.on('messageCreate', async message => {
                 return message.reply('❌ لا يمكنك فك الإسكات عن هذا الشخص لأنك لست من أعطاه الإسكات!');
             }
 
-            if (!target.communicationDisabledUntil) {
+            if (!punishmentExecutors[target.id] || punishmentExecutors[target.id].type !== 'timeout') {
                 return message.reply('هذا العضو ليس لديه إسكات حالياً!');
             }
 
             try {
-                await target.timeout(null);
+                // فك القفل: حذف صلاحيات المنع من الشاتات
+                const textChannels = guild.channels.cache.filter(c => c.isTextBased());
+                for (const [id, ch] of textChannels) {
+                    if (ch.permissionOverwrites) await ch.permissionOverwrites.delete(target.id).catch(() => {});
+                }
                 await message.react('✅').catch(() => {});
 
                 delete punishmentExecutors[target.id];

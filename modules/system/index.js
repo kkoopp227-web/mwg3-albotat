@@ -367,6 +367,13 @@ function hasPermission(member, category, discordPerm) {
     return member.roles.cache.some(role => guildRoles.includes(role.id));
 }
 
+// فحص صارم لخيار نظامه: فقط الرتب المضافة في لوحة الصلاحيات (+ مالك السيرفر) — بدون صلاحيات ديسكورد
+function hasPanelRole(member, category) {
+    if (member.id === member.guild.ownerId) return true;
+    const guildRoles = rolePerms[member.guild.id]?.[category] || [];
+    return member.roles.cache.some(role => guildRoles.includes(role.id));
+}
+
 // تعريف الأوامر
 const commands = [
     new SlashCommandBuilder().setName('اوامر').setDescription('لوحة التحكم في صلاحيات الرتب'),
@@ -687,7 +694,7 @@ client.on('interactionCreate', async interaction => {
             if (!CS_OPTIONS[option]) {
                 return await interaction.update({ content: '❌ خيار غير معروف!', components: [] });
             }
-            if (!hasPermission(interaction.member, CS_OPTIONS[option].category, CS_OPTIONS[option].perm)) {
+            if (!hasPanelRole(interaction.member, CS_OPTIONS[option].category)) {
                 return await interaction.update({ content: '❌ ليس لديك صلاحية لاستخدام هذا النوع من العقوبات!', components: [] });
             }
 
@@ -1572,7 +1579,7 @@ client.on('messageCreate', async message => {
         // === خيار نظامه: نظام العقوبات المخصص ===
         const customCfg = getCustomSys(guild.id);
         if (customCfg.word && commandName === customCfg.word.toLowerCase()) {
-            const allowed = customCfg.options.filter(o => CS_OPTIONS[o] && hasPermission(member, CS_OPTIONS[o].category, CS_OPTIONS[o].perm));
+            const allowed = customCfg.options.filter(o => CS_OPTIONS[o] && hasPanelRole(member, CS_OPTIONS[o].category));
             if (allowed.length === 0) return;
             const target = message.mentions.members.first() || (args[0] ? await guild.members.fetch(args[0]).catch(() => null) : null);
             if (!target) return message.reply(`يرجى منشن العضو المستهدف! (مثال: \`${customCfg.word} @فلان\`)`);

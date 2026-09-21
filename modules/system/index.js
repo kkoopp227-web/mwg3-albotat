@@ -56,6 +56,7 @@ try {
 
 function savePerms() {
     fs.writeFileSync(permsPath, JSON.stringify(rolePerms, null, 2));
+    persistSystemState().catch(() => {});
 }
 
 // ملف الإحصائيات
@@ -110,6 +111,7 @@ try {
 
 function saveJailConfig() {
     fs.writeFileSync(jailConfigPath, JSON.stringify(jailChannels, null, 2));
+    persistSystemState().catch(() => {});
 }
 
 // ملف تخزين رتب المسجونين لاستعادتها
@@ -121,6 +123,7 @@ try {
 
 function saveJailedRoles() {
     fs.writeFileSync(jailedRolesPath, JSON.stringify(jailedRoles, null, 2));
+    persistSystemState().catch(() => {});
 }
 
 // ===== إدارة العقوبات المخصصة (لكل نوع) =====
@@ -132,6 +135,7 @@ try {
 
 function savePunishTemplates() {
     fs.writeFileSync(punishTemplatesPath, JSON.stringify(punishTemplates, null, 2));
+    persistSystemState().catch(() => {});
 }
 
 function getPunishTemplates(guildId, type) {
@@ -234,18 +238,13 @@ async function applyTemplatePunishment(guild, executorMember, target, type, temp
     }
 
     if (type === 'timeout') {
-        let muteRole = guild.roles.cache.find(r => r.name === 'إسكات');
-        if (!muteRole) muteRole = await guild.roles.create({ name: 'إسكات', color: '#818386', reason: 'رتبة الإسكات التلقائية' });
-        const textChannels = guild.channels.cache.filter(c => c.isTextBased());
-        for (const [id, ch] of textChannels) {
-            if (ch.permissionOverwrites) await ch.permissionOverwrites.edit(muteRole, { SendMessages: false }).catch(() => {});
-        }
-        await target.roles.add(muteRole);
+        const appliedMs = Math.min(durationMs, 2419200000); // سقف ديسكورد: 28 يوم
+        await target.timeout(new Date(Date.now() + appliedMs), reason);
         addStat(target.id, 'timeout', executorMember.user.tag);
-        punishmentExecutors[target.id] = { executorId, type: 'timeout', expiresAt: Date.now() + durationMs };
+        punishmentExecutors[target.id] = { executorId, type: 'timeout', expiresAt: Date.now() + appliedMs };
         savePunishments();
         sendLog(guild, 'timeout', createLogEmbed('🔇 سجل إسكات (عقوبة مخصصة)', target, executorMember.user.tag, reason, durText));
-        return `🔇 تم إسكات ${target}\n**العقوبة:** ${template.name} — ${durText}`;
+        return `🔇 تم إسكات ${target} (تايوم أوت رسمي، بدون رول)\n**العقوبة:** ${template.name} — ${durText}`;
     }
 
     if (type === 'ban') {
@@ -270,6 +269,7 @@ try {
 
 function saveServerSettings() {
     fs.writeFileSync(serverSettingsPath, JSON.stringify(serverSettings, null, 2));
+    persistSystemState().catch(() => {});
 }
 
 // ملف تخزين منفذي العقوبات
@@ -281,6 +281,7 @@ try {
 
 function savePunishments() {
     fs.writeFileSync(punishmentsPath, JSON.stringify(punishmentExecutors, null, 2));
+    persistSystemState().catch(() => {});
 }
 
 // ملف الأسباب الجاهزة (Presets)
@@ -292,6 +293,65 @@ try {
 
 function savePresets() {
     fs.writeFileSync(presetsPath, JSON.stringify(moderationPresets, null, 2));
+    persistSystemState().catch(() => {});
+}
+
+// ===== الحفظ الدائم عبر MongoDB (حتى لا تضيع التعديلات والإعدادات عند إعادة التشغيل) =====
+let mongoClient = null;
+let mongoDb = null;
+
+async function getSystemMongo() {
+    if (mongoDb) return mongoDb;
+    if (!process.env.MONGO_URI) return null;
+    try {
+        const { MongoClient } = require('mongodb');
+        mongoClient = new MongoClient(process.env.MONGO_URI, { serverSelectionTimeoutMS: 8000 });
+        await mongoClient.connect();
+        mongoDb = mongoClient.db();
+        return mongoDb;
+    } catch (e) {
+        console.error('[MONGO] فشل الاتصال:', e.message);
+        return null;
+    }
+}
+
+async function persistSystemState() {
+    try {
+        const db = await getSystemMongo();
+        if (!db) return;
+        await db.collection('system_state').updateOne(
+            { _id: 'state1' },
+            {
+                $set: {
+                    permissions: rolePerms,
+                    punishTemplates,
+                    punishmentExecutors,
+                    jailedRoles,
+                    jailChannels,
+                    serverSettings,
+                    presets: moderationPresets
+                }
+            },
+            { upsert: true }
+        );
+    } catch (e) { console.error('[MONGO PERSIST]', e.message); }
+}
+
+async function loadPersistedSystemState() {
+    try {
+        const db = await getSystemMongo();
+        if (!db) return;
+        const doc = await db.collection('system_state').findOne({ _id: 'state1' });
+        if (!doc) return;
+        if (doc.permissions) rolePerms = doc.permissions;
+        if (doc.punishTemplates) punishTemplates = doc.punishTemplates;
+        if (doc.punishmentExecutors) punishmentExecutors = doc.punishmentExecutors;
+        if (doc.jailedRoles) jailedRoles = doc.jailedRoles;
+        if (doc.jailChannels) jailChannels = doc.jailChannels;
+        if (doc.serverSettings) serverSettings = doc.serverSettings;
+        if (doc.presets) moderationPresets = doc.presets;
+        console.log('[MONGO] تم تحميل الحالة المحفوظة بنجاح');
+    } catch (e) { console.error('[MONGO LOAD]', e.message); }
 }
 
 async function sendLog(guild, type, embed) {
@@ -432,12 +492,9 @@ async function checkPunishments() {
             const member = await guild.members.fetch(targetId).catch(() => null);
 
             if (punishment.type === 'timeout') {
-                // فك عن طريق إزالة رتبة الإسكات
-                if (member) {
-                    const role = guild.roles.cache.find(r => r.name === 'إسكات');
-                    if (role && member.roles.cache.has(role.id)) {
-                        await member.roles.remove(role).catch(() => {});
-                    }
+                // تايم أوت رسمي — ينتهي تلقائياً من ديسكورد، ننظف فقط إن بقي شيء
+                if (member && member.communicationDisabledUntil) {
+                    await member.timeout(null).catch(() => {});
                 }
                 console.log(`✅ [تلقائي] تم فك إسكات ${member?.user.tag || targetId}`);
             } else if (punishment.type === 'mute') {
@@ -460,11 +517,40 @@ async function checkPunishments() {
     }
 }
 
-client.once('ready', () => {
+client.once('ready', async () => {
     console.log(`تم تسجيل الدخول بنجاح كـ ${client.user.tag}`);
+    await loadPersistedSystemState();
     // فحص كل دقيقة
     setInterval(checkPunishments, 60000);
     checkPunishments(); // فحص فوري عند التشغيل
+});
+
+// إعادة تطبيق العقوبات عند عودة عضو غادر السيرفر وهو عليه عقوبة
+client.on('guildMemberAdd', async (member) => {
+    const pun = punishmentExecutors[member.id];
+    if (!pun) return;
+    if (pun.expiresAt && Date.now() > pun.expiresAt) {
+        delete punishmentExecutors[member.id];
+        savePunishments();
+        return;
+    }
+    try {
+        if (pun.type === 'jail') {
+            const config = jailChannels[member.guild.id] || {};
+            const jailRole = config.roleId ? member.guild.roles.cache.get(config.roleId) : member.guild.roles.cache.find(r => r.name.toLowerCase() === 'jail' || r.name === 'سجن' || r.name === 'Sجن');
+            if (jailRole) await member.roles.add(jailRole).catch(() => {});
+            await applyJail(member);
+            console.log(`✅ [عودة] أُعيد تطبيق السجن على ${member.user.tag}`);
+        } else if (pun.type === 'timeout') {
+            const remaining = pun.expiresAt ? pun.expiresAt - Date.now() : 0;
+            if (remaining > 0) {
+                await member.timeout(new Date(Date.now() + Math.min(remaining, 2419200000))).catch(() => {});
+                console.log(`✅ [عودة] أُعيد تطبيق الإسكات على ${member.user.tag}`);
+            }
+        } else if (pun.type === 'mute') {
+            // يُطبَّق تلقائياً عند دخوله روم صوتي عبر voiceStateUpdate
+        }
+    } catch (e) { console.error('[ERROR] إعادة تطبيق العقوبة عند العودة:', e); }
 });
 
 // منع البوت من الوقوف بسبب أخطاء غير متوقعة
@@ -1887,48 +1973,32 @@ client.on('messageCreate', async message => {
                 return message.reply('لا يمكنك إسكات عضو برتبة أعلى منك أو مساوية لك!');
             }
 
-            // جلب أو إنشاء رتبة الإسكات
-            let muteRole = guild.roles.cache.find(r => r.name === 'إسكات');
-            if (!muteRole) {
-                try { muteRole = await guild.roles.create({ name: 'إسكات', color: '#818386', reason: 'رتبة الإسكات التلقائية' }); }
-                catch (e) { return message.reply('فشل إنشاء رتبة الإسكات!'); }
-            }
-
-            // فحص إذا عنده إسكات بالفعل
-            if (target.roles.cache.has(muteRole.id)) {
+            // تايم أوت رسمي من ديسكورد (بدون رول)
+            if (target.communicationDisabledUntil) {
                 return message.reply(`⚠️ ${target} **عنده إسكات بالفعل!**`);
             }
 
             const durationArg = args.find(a => !isNaN(parseInt(a)) && a.length < 10);
-            const duration = durationArg ? parseInt(durationArg) : 15;
+            const duration = Math.min(durationArg ? parseInt(durationArg) : 15, 40320); // سقف 28 يوم
             const reason = args.filter(a => isNaN(parseInt(a)) && !a.includes('<@')).join(' ') || 'لا يوجد سبب محدد';
 
-
             try {
-                // ضع الصلاحية على الرتبة (لا على العضو) في القنوات النصية فقط
-                const textChannels = guild.channels.cache.filter(c => c.isTextBased());
-                for (const [id, ch] of textChannels) {
-                    if (ch.permissionOverwrites) {
-                        await ch.permissionOverwrites.edit(muteRole, { SendMessages: false }).catch(() => {});
-                    }
-                }
-
-                await target.roles.add(muteRole);
+                await target.timeout(Math.min(duration * 60 * 1000, 2419200000), reason);
                 await message.react('✅').catch(() => {});
                 addStat(target.id, 'timeout', message.author.tag);
 
-                const logEmbed = createLogEmbed('🔇 سجل إسكات', target, message.author.tag, reason, duration ? `${duration} دقيقة` : 'دائم');
+                const logEmbed = createLogEmbed('🔇 سجل إسكات', target, message.author.tag, reason, `${duration} دقيقة`);
                 sendLog(guild, 'timeout', logEmbed);
 
                 punishmentExecutors[target.id] = {
                     executorId: message.author.id,
                     type: 'timeout',
-                    expiresAt: duration ? Date.now() + (duration * 60000) : null
+                    expiresAt: Date.now() + (duration * 60000)
                 };
                 savePunishments();
             } catch (e) {
                 console.error(e);
-                message.reply('❌ حدث خطأ! تأكد من أن رتبة البوت أعلى من رتبة العضو.');
+                message.reply('❌ حدث خطأ! تأكد من صلاحيات البوت (Moderate Members) وأن رتبة البوت أعلى من رتبة العضو.');
             }
         }
 
@@ -2008,13 +2078,12 @@ client.on('messageCreate', async message => {
                 return message.reply('❌ لا يمكنك فك الإسكات عن هذا الشخص لأنك لست من أعطاه الإسكات!');
             }
 
-            const muteRole = guild.roles.cache.find(r => r.name === 'إسكات');
-            if (!muteRole || !target.roles.cache.has(muteRole.id)) {
+            if (!target.communicationDisabledUntil) {
                 return message.reply('هذا العضو ليس لديه إسكات حالياً!');
             }
 
             try {
-                await target.roles.remove(muteRole);
+                await target.timeout(null);
                 await message.react('✅').catch(() => {});
 
                 delete punishmentExecutors[target.id];

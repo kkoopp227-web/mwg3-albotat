@@ -184,12 +184,21 @@ function ptPanelRow() {
     );
 }
 
+// من يشارك المنفذ في نفس الرتبة لا يجوز تطبيق العقوبة عليه
+function sameRoleWith(executorMember, target) {
+    if (!executorMember || !target) return false;
+    return target.roles.cache.some(r => executorMember.roles.cache.has(r.id));
+}
+
 async function applyTemplatePunishment(guild, executorMember, target, type, template) {
     const executorId = executorMember.id;
     if (target.id === executorId) throw new Error('لا يمكنك تطبيق العقوبة على نفسك!');
     if (target.id === guild.ownerId) throw new Error('لا يمكنك تطبيق عقوبة على مالك السيرفر!');
     if (target.roles.highest.position >= executorMember.roles.highest.position && executorId !== guild.ownerId) {
         throw new Error('لا يمكنك تطبيق عقوبة على عضو برتبة أعلى منك أو مساوية لك!');
+    }
+    if (sameRoleWith(executorMember, target) && executorId !== guild.ownerId) {
+        throw new Error('لا يمكنك تطبيق عقوبة على شخص في نفس الرتبة التي لديك!');
     }
     const reason = `عقوبة: ${template.name}`;
     const durationMs = Number(template.amount) * (PT_UNITS[template.unit] ? PT_UNITS[template.unit].ms : 0);
@@ -1920,6 +1929,9 @@ client.on('messageCreate', async message => {
                     if (targetMember.roles.highest.position >= member.roles.highest.position && message.author.id !== guild.ownerId) {
                         return message.reply('لا يمكنك حظر عضو برتبة أعلى منك أو مساوية لك!');
                     }
+                    if (sameRoleWith(member, targetMember) && message.author.id !== guild.ownerId) {
+                        return message.reply('لا يمكنك حظر شخص في نفس الرتبة التي لديك!');
+                    }
                     if (!targetMember.bannable) return message.reply('لا يمكنني حظر هذا العضو (رتبته أعلى مني)!');
                 }
 
@@ -1969,6 +1981,9 @@ client.on('messageCreate', async message => {
             if (target.roles.highest.position >= member.roles.highest.position && message.author.id !== guild.ownerId) {
                 return message.reply('لا يمكنك طرد عضو برتبة أعلى منك أو مساوية لك!');
             }
+            if (sameRoleWith(member, target) && message.author.id !== guild.ownerId) {
+                return message.reply('لا يمكنك طرد شخص في نفس الرتبة التي لديك!');
+            }
             const reason = args.slice(1).join(' ') || 'لا يوجد سبب محدد';
 
             if (!target.kickable) return message.reply('لا يمكنني طرد هذا العضو!');
@@ -1992,6 +2007,9 @@ client.on('messageCreate', async message => {
             if (target.id === message.author.id) return message.reply('لا يمكنك إسكات نفسك!');
             if (target.roles.highest.position >= member.roles.highest.position && message.author.id !== guild.ownerId) {
                 return message.reply('لا يمكنك إسكات عضو برتبة أعلى منك أو مساوية لك!');
+            }
+            if (sameRoleWith(member, target) && message.author.id !== guild.ownerId) {
+                return message.reply('لا يمكنك إسكات شخص في نفس الرتبة التي لديك!');
             }
 
             const durationArg = args.find(a => !isNaN(parseInt(a)) && a.length < 10);
@@ -2031,6 +2049,9 @@ client.on('messageCreate', async message => {
             if (target.id === message.author.id) return message.reply('لا يمكنك عمل ميوت لنفسك!');
             if (target.roles.highest.position >= member.roles.highest.position && message.author.id !== guild.ownerId) {
                 return message.reply('لا يمكنك ميوت عضو برتبة أعلى منك أو مساوية لك!');
+            }
+            if (sameRoleWith(member, target) && message.author.id !== guild.ownerId) {
+                return message.reply('لا يمكنك ميوت شخص في نفس الرتبة التي لديك!');
             }
 
             const durationArg = args.find(a => !isNaN(parseInt(a)) && a.length < 10);
@@ -2176,6 +2197,9 @@ client.on('messageCreate', async message => {
             if (target.roles.highest.position >= member.roles.highest.position && message.author.id !== guild.ownerId) {
                 return message.reply('لا يمكنك سجن عضو برتبة أعلى منك أو مساوية لك!');
             }
+            if (sameRoleWith(member, target) && message.author.id !== guild.ownerId) {
+                return message.reply('لا يمكنك سجن شخص في نفس الرتبة التي لديك!');
+            }
 
             // ❌ فحص: هل الشخص في السجن بالفعل؟
             const jailRoleCheck = guild.roles.cache.find(r => r.name === 'S-JAIL' || r.name === 'سجن' || r.name === 'Sجن' || r.name.toLowerCase() === 'jail');
@@ -2284,6 +2308,9 @@ client.on('messageCreate', async message => {
             if (target.id === message.author.id) return message.reply('لا يمكنك تحذير نفسك!');
             if (target.roles.highest.position >= member.roles.highest.position && message.author.id !== guild.ownerId) {
                 return message.reply('لا يمكنك تحذير عضو برتبة أعلى منك أو مساوية لك!');
+            }
+            if (sameRoleWith(member, target) && message.author.id !== guild.ownerId) {
+                return message.reply('لا يمكنك تحذير شخص في نفس الرتبة التي لديك!');
             }
             
             const reason = args.slice(1).join(' ');

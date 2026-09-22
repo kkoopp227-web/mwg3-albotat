@@ -13,6 +13,7 @@ const {
     SlashCommandBuilder, PermissionsBitField
 } = require('discord.js');
 const { PNG } = require('pngjs');
+const { createCanvas } = require('@napi-rs/canvas');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -181,37 +182,50 @@ function parseHex(hex) {
 
 function makeColorBanner(bgHex) {
     const width = 900;
-    const height = 240;
+    const height = 270;
     const bg = parseHex(bgHex) || [43, 45, 49];
-    const png = new PNG({ width, height });
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
 
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const idx = (width * y + x) * 4;
-            png.data[idx] = bg[0];
-            png.data[idx + 1] = bg[1];
-            png.data[idx + 2] = bg[2];
-            png.data[idx + 3] = 255;
-        }
-    }
+    const grad = ctx.createLinearGradient(0, 0, 0, height);
+    const darker = [Math.max(0, bg[0] - 30), Math.max(0, bg[1] - 30), Math.max(0, bg[2] - 30)];
+    grad.addColorStop(0, `rgb(${bg[0]},${bg[1]},${bg[2]})`);
+    grad.addColorStop(1, `rgb(${darker[0]},${darker[1]},${darker[2]})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
 
-    const barW = Math.floor(width / 15);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 26px Tajawal Bold';
+    ctx.fillText('لوحة الألوان — اختر رقم اللون', width / 2, 18);
+
+    // دوائر صغيرة: كل دائرة لون، وتحت كل دائرة رقمها
+    const d = 44;
+    const gap = 9;
+    const step = d + gap;
+    const total = 15 * d + 14 * gap;
+    const startX = (width - total) / 2 + d / 2;
+    const cy = 128;
+
     for (let i = 0; i < 15; i++) {
-        const c = COLOR_ROLE_COLORS[i];
-        const x0 = i * barW + 3;
-        const x1 = Math.min((i + 1) * barW - 3, width);
-        for (let y = 12; y < height - 12; y++) {
-            for (let x = x0; x < x1; x++) {
-                const idx = (width * y + x) * 4;
-                png.data[idx] = (c >> 16) & 0xff;
-                png.data[idx + 1] = (c >> 8) & 0xff;
-                png.data[idx + 2] = c & 0xff;
-                png.data[idx + 3] = 255;
-            }
-        }
+        const cx = startX + i * step;
+        ctx.beginPath();
+        ctx.arc(cx, cy, d / 2, 0, Math.PI * 2);
+        ctx.fillStyle = `#${COLOR_ROLE_COLORS[i].toString(16).padStart(6, '0')}`;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.stroke();
+
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.font = 'bold 22px Tajawal Bold';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(i + 1), cx, cy + d / 2 + 12);
     }
 
-    return PNG.sync.write(png);
+    return canvas.toBuffer('image/png');
 }
 
 function colorRoleSelectRow() {

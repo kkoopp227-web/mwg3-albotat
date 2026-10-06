@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection, EmbedBuilder, ActivityType, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, EmbedBuilder, ActivityType, MessageFlags, Options } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
@@ -11,6 +11,12 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildInvites,
   ],
+  // تقييد الذاكرة: كاش محدود بدل ما يكبر بدون حدود
+  makeCache: Options.cacheWithLimits({
+    ...Options.DefaultMakeCacheSettings,
+    GuildMemberManager: 2500,
+    UserManager: 2500,
+  }),
 });
 
 client.commands = new Collection();
@@ -42,6 +48,12 @@ client.once('ready', async () => {
     activities: [{ name: 'مراقبة السيرفر', type: ActivityType.Watching }],
     status: 'online',
   });
+
+  // مراقبة الذاكرة كل 10 دقائق لرصد أي نمو غير طبيعي قبل ما يقتل البوت
+  setInterval(() => {
+    const m = process.memoryUsage();
+    console.log(`[ذاكرة] RSS=${(m.rss / 1024 / 1024).toFixed(1)}MB | heap=${(m.heapUsed / 1024 / 1024).toFixed(1)}MB`);
+  }, 10 * 60 * 1000);
 
   for (const guild of client.guilds.cache.values()) {
     try {

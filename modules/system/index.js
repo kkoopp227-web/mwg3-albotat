@@ -2485,9 +2485,26 @@ client.on('messageCreate', async message => {
             const target = message.mentions.members.first() || (args[0] ? await guild.members.fetch(args[0]).catch(() => null) : null);
             if (!target) return message.reply('يرجى منشن العضو أو وضع الأيدي الخاص به!');
 
-            // جلب الرتبة (منشن، أيدي، أو اسم)
-            const roleInput = args.slice(1).join(' ').replace(/[<@&>]/g, '');
-            const role = message.mentions.roles.first() || guild.roles.cache.get(roleInput) || guild.roles.cache.find(r => r.name.toLowerCase() === args.slice(1).join(' ').toLowerCase());
+            // البقية بعد العضو المستهدف (بدون منشن الأشخاص ولا الرتب)
+            const restRaw = args.slice(1).join(' ');
+            // 1) منشن رتبة مباشر
+            let role = message.mentions.roles.first() || null;
+            if (!role) {
+                // 2) أيدي داخل النص (مثل <@&123> أو 123)
+                const mentionRid = restRaw.match(/<@&(\d+)>/);
+                if (mentionRid) role = guild.roles.cache.get(mentionRid[1]) || null;
+            }
+            if (!role) {
+                const cleanId = args.slice(1).join(' ').replace(/[<@!&>\s]/g, '');
+                if (cleanId && /^\d+$/.test(cleanId)) role = guild.roles.cache.get(cleanId) || null;
+            }
+            if (!role) {
+                // 3) اسم الرتبة بعد إزالة كل المنشنات والمسافات الزائدة
+                const roleName = args.slice(1).join(' ').replace(/<@!?\d+>/g, '').replace(/<@&\d+>/g, '').replace(/\s+/g, ' ').trim();
+                if (roleName) {
+                    role = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase()) || null;
+                }
+            }
             
             if (!role) return message.reply('لم يتم العثور على هذه الرتبة! تأكد من الاسم أو المنشن أو الأيدي.');
 

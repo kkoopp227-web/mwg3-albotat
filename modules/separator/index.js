@@ -1451,6 +1451,10 @@ client.on('messageCreate', async message => {
         const args = content.split(/\s+/).filter(a => a !== '');
         const name = (args.shift() || '').toLowerCase();
 
+        // أوامر الفاصل فقط — أي كلمة ثانية تبدأ بـ - (مثل -رول لبووت آخر) نتجاهلها بصمت
+        const SEP_COMMANDS = new Set(['send', 'auto-delete', 'setup-separator']);
+        if (!SEP_COMMANDS.has(name)) return;
+
         if (!isAdminChannel(message.channel.id)) {
             return message.reply('عذراً، لا يمكنك استخدام الأوامر إلا في الشات المخصص لها.');
         }
